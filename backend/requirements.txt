@@ -4,3 +4,8 @@ pydantic
 pydantic-settings
 email-validator
 python-dotenv
+python-jose
+sqlalchemy
+minio
+alembic
+python-multipart
