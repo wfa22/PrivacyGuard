@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import HTMLResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.staticfiles import StaticFiles
 
 from routers import auth, users, items, demo, media
 from core.config import settings
@@ -14,9 +17,11 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     description="PrivacyGuard API",
     version="0.2.0",
-    docs_url="/docs",
+    docs_url=None,  # Отключаем стандартный docs_url, создадим кастомный
     redoc_url="/redoc",
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS
 app.add_middleware(
@@ -75,3 +80,44 @@ def custom_openapi():
     return app.openapi_schema
 
 app.openapi = custom_openapi
+
+
+# Кастомный Swagger UI с исправлением для multipart запросов
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    """
+    Кастомный Swagger UI с исправлением для передачи токена в multipart запросах
+    """
+    html_response = get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=app.title + " - Swagger UI",
+        oauth2_redirect_url=app.swagger_ui_oauth2_redirect_url,
+        swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui-bundle.js",
+        swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui.css",
+        swagger_favicon_url="https://fastapi.tiangolo.com/img/favicon.png",
+    )
+    
+    # Добавляем кастомный JavaScript для исправления multipart запросов
+    fix_script = '<script src="/static/swagger-fix.js"></script>'
+    
+    # Получаем HTML контент и модифицируем его
+    # HTMLResponse.body может быть bytes или str
+    if isinstance(html_response.body, bytes):
+        html_content = html_response.body.decode('utf-8')
+    else:
+        html_content = str(html_response.body)
+
+    html_content = html_content.replace("\ufeff", "")
+    
+    html_content = html_content.replace('</body>', fix_script + '</body>')
+    
+    return HTMLResponse(content=html_content)
+
+
+@app.get("/docs/oauth2-redirect", include_in_schema=False)
+async def swagger_ui_redirect():
+    try:
+        from fastapi.openapi.docs import get_swagger_ui_oauth2_redirect_html
+        return get_swagger_ui_oauth2_redirect_html()
+    except ImportError:
+        return HTMLResponse(content="", status_code=200)

@@ -1,6 +1,7 @@
 import uuid
 from minio import Minio
 from typing import IO
+from datetime import timedelta 
 
 from core.config import settings
 
@@ -18,8 +19,24 @@ class StorageService:
 
     def upload_fileobj(self, file_obj: IO, filename: str) -> str:
         object_name = f"{uuid.uuid4()}_{filename}"
-        self.client.put_object(self.bucket, object_name, file_obj, length=-1, part_size=10*1024*1024)
+
+        # get size
+        file_obj.seek(0, 2)
+        size = file_obj.tell()
+        file_obj.seek(0)
+
+        self.client.put_object(
+            self.bucket,
+            object_name,
+            file_obj,
+            length=size,
+            part_size=10*1024*1024
+        )
         return object_name
 
-    def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
-        return self.client.presigned_get_object(self.bucket, object_name, expires=expires)
+    def get_presigned_url(self, object_name, expires=3600):
+        return self.client.presigned_get_object(
+            self.bucket,
+            object_name,
+            expires=timedelta(seconds=expires)
+        )
