@@ -1,11 +1,19 @@
+# PrivacyGuard project
 
-  # PrivacyGuard project
+This repository contains the backend for the PrivacyGuard project. The original design is available at https://www.figma.com/design/jaPVFdHqYeGoCbbmfgSBpi/PrivacyGuard-project.
 
-  This is a code bundle for PrivacyGuard project. The original project is available at https://www.figma.com/design/jaPVFdHqYeGoCbbmfgSBpi/PrivacyGuard-project.
+## Getting started
 
-  ## Running the code
+- Create a virtual environment and activate it.
+- Install backend dependencies: `pip install -r backend/requirements.txt`.
+- Start the FastAPI app: `uvicorn backend.main:app --reload`.
 
-  Run `npm i` to install the dependencies.
+The service uses an SQLite database by default (`backend/app.db`). Adjust connection settings through environment variables exposed in `backend/core/config.py`.
 
-  Run `npm run dev` to start the development server.
-  
+## Authentication
+
+- Register a user with `POST /api/auth/register`.
+- Obtain tokens via `POST /api/auth/login`.
+- Refresh tokens with `POST /api/auth/refresh`.
+
+Protected routes such as `/api/users/*` and `/api/media/*` require a valid JWT access token provided in the `Authorization: Bearer <token>` header. Without a token, these endpoints return `401 Unauthorized`.

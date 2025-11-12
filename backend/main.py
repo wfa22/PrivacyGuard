@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 
-from routers import auth, users, items, demo, media
+from routers import auth, users, media
 from core.config import settings
 from core.database import Base, engine
 
@@ -35,8 +35,6 @@ app.add_middleware(
 # Routers
 app.include_router(auth.router, prefix="/api", tags=["Auth"])
 app.include_router(users.router, prefix="/api", tags=["Users"])
-app.include_router(items.router, prefix="/api/items", tags=["Items"])
-app.include_router(demo.router, prefix="/api/demo", tags=["Demo"])
 app.include_router(media.router, prefix="/api", tags=["Media"])
 
 
@@ -98,7 +96,8 @@ async def custom_swagger_ui_html():
     )
     
     # Добавляем кастомный JavaScript для исправления multipart запросов
-    fix_script = '<script src="/static/swagger-fix.js"></script>'
+    # Версия 2.5 - токен перехватывается в реальном времени при вводе в модальном окне
+    fix_script = '<script src="/static/swagger-fix.js?v=2.5"></script>'
     
     # Получаем HTML контент и модифицируем его
     # HTMLResponse.body может быть bytes или str

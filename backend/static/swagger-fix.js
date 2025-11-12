@@ -4,27 +4,10 @@
     
     console.log('[Swagger Fix] Script loading...');
     
-    // Ключ для сохранения токена в localStorage
-    const TOKEN_STORAGE_KEY = 'swagger-fix-bearer-token';
-    
-    // Функция для сохранения токена
-    function saveToken(token) {
-        if (token && token.length > 20) {
-            localStorage.setItem(TOKEN_STORAGE_KEY, token);
-            console.log('[Swagger Fix] 💾 Token saved to localStorage');
-            return true;
-        }
-        return false;
-    }
-    
-    // Функция для получения токена из localStorage
-    function getStoredToken() {
-        const token = localStorage.getItem(TOKEN_STORAGE_KEY);
-        if (token && token.length > 20) {
-            return token;
-        }
-        return null;
-    }
+    // Временное хранилище для токена, установленного через Swagger UI
+    // Используется только если Swagger UI state недоступен
+    let currentAuthToken = null;
+    let tokenSource = null; // 'swagger-ui' или null
     
     // Функция для проверки, является ли строка токеном
     function isValidToken(value) {
@@ -61,184 +44,152 @@
         return false;
     }
     
-    // Перехватываем ввод токена в поле Swagger UI
-    function setupTokenCapture() {
-        // Используем MutationObserver для отслеживания изменений в DOM
-        const observer = new MutationObserver(function(mutations) {
-            // Ищем поле ввода токена
-            const tokenInputs = document.querySelectorAll('input[type="text"], input[type="password"], input');
-            tokenInputs.forEach(function(input) {
-                // Проверяем текущее значение
-                const value = input.value || '';
-                if (isValidToken(value)) {
-                    const token = value.replace(/^Bearer\s+/i, '').trim();
-                    saveToken(token);
-                }
-                
-                // Сохраняем токен при изменении
-                if (!input._swaggerFixListener) {
-                    input._swaggerFixListener = true;
-                    input.addEventListener('input', function(e) {
-                        const value = e.target.value || '';
-                        if (isValidToken(value)) {
-                            const token = value.replace(/^Bearer\s+/i, '').trim();
-                            saveToken(token);
-                            console.log('[Swagger Fix] 🎯 Token captured from input field!');
-                        }
-                    });
-                }
-            });
-        });
-        
-        // Наблюдаем за изменениями в body
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: false,
-            characterData: false
-        });
-        
-        // Также проверяем сразу после загрузки и периодически
-        function checkInputs() {
-            const allInputs = document.querySelectorAll('input');
-            allInputs.forEach(function(input) {
-                const value = input.value || '';
-                if (isValidToken(value)) {
-                    const token = value.replace(/^Bearer\s+/i, '').trim();
-                    saveToken(token);
-                }
-            });
-        }
-        
-        // Проверяем сразу и периодически
-        setTimeout(checkInputs, 500);
-        setTimeout(checkInputs, 2000);
-        setInterval(checkInputs, 3000);
-    }
-    
-    setupTokenCapture();
+    // НЕ сохраняем токены автоматически из полей ввода
+    // Токены должны быть установлены через Swagger UI (кнопка "Authorize")
+    // и будут получены через getAuthToken() из Swagger UI state
     
     // Функция для получения токена из Swagger UI
-    function getAuthToken() {
+    // ВАЖНО: Использует токен ТОЛЬКО если пользователь явно авторизовался в Swagger UI
+    // НЕ сохраняет токены - только читает из Swagger UI state
+    function getAuthToken(debug = false) {
         try {
-            // Способ 0: Из localStorage (самый надежный, сохраняется между сессиями)
-            const storedToken = getStoredToken();
-            if (storedToken) {
-                return storedToken;
-            }
-            
-            // Способ 1: Прямой поиск в DOM (актуальный токен в полях)
-            const allInputs = document.querySelectorAll('input[type="text"], input');
-            for (let input of allInputs) {
-                const value = input.value || '';
-                if (isValidToken(value)) {
-                    const token = value.replace(/^Bearer\s+/i, '').trim();
-                    saveToken(token); // Сохраняем для будущего использования
-                    console.log('[Swagger Fix] 🎯 Token found in DOM input!');
-                    return token;
-                }
-            }
-            
-            // Способ 2: Из системы авторизации Swagger UI
+            // Способ 1: Из системы авторизации Swagger UI (приоритет - пользователь авторизовался)
             if (window.ui && window.ui.getSystem) {
                 try {
                     const system = window.ui.getSystem();
                     const authSelectors = system.authSelectors;
                     if (authSelectors && authSelectors.getAuthorized) {
                         const authorized = authSelectors.getAuthorized();
+                        if (debug) console.log('[Swagger Fix] 🔍 authSelectors.getAuthorized():', authorized);
                         if (authorized && authorized.BearerAuth) {
                             let token = authorized.BearerAuth.value || authorized.BearerAuth;
+                            if (debug) console.log('[Swagger Fix] 🔍 BearerAuth token from authSelectors:', token?.substring(0, 30) + '...');
                             // Проверяем, что это не строка "string" (дефолтное значение Swagger)
                             if (token && typeof token === 'string' && token !== 'string' && token.length > 20) {
-                                cachedToken = token;
-                                console.log('[Swagger Fix] Token found from authSelectors');
+                                if (debug) console.log('[Swagger Fix] ✅ Token found via authSelectors');
                                 return token;
                             }
                         }
                     }
                 } catch(e) {
-                    console.log('[Swagger Fix] Error accessing authSelectors:', e);
+                    if (debug) console.log('[Swagger Fix] Error accessing authSelectors:', e);
                 }
             }
             
-            // Способ 3: Прямой доступ к state Swagger UI
+            // Способ 2: Прямой доступ к state Swagger UI (пользователь авторизовался)
             if (window.ui && window.ui.getSystem) {
                 try {
                     const system = window.ui.getSystem();
                     const state = system.getState();
-                    if (state && state.auth && state.auth.authorized) {
-                        const bearerAuth = state.auth.authorized.BearerAuth;
-                        if (bearerAuth) {
-                            let token = bearerAuth.value || bearerAuth;
+                    if (debug) {
+                        console.log('[Swagger Fix] 🔍 State.auth:', JSON.stringify(state?.auth, null, 2));
+                        console.log('[Swagger Fix] 🔍 Full state structure:', Object.keys(state || {}));
+                    }
+                    if (state && state.auth) {
+                        // Проверяем разные возможные пути к токену
+                        if (state.auth.authorized && state.auth.authorized.BearerAuth) {
+                            let token = state.auth.authorized.BearerAuth.value || state.auth.authorized.BearerAuth;
+                            if (debug) console.log('[Swagger Fix] 🔍 Token from state.auth.authorized.BearerAuth:', token?.substring(0, 30) + '...');
                             if (token && typeof token === 'string' && token !== 'string' && token.length > 20) {
-                                cachedToken = token;
-                                console.log('[Swagger Fix] Token found from state');
+                                if (debug) console.log('[Swagger Fix] ✅ Token found via state.auth.authorized');
                                 return token;
                             }
                         }
-                    }
-                } catch(e) {
-                    console.log('[Swagger Fix] Error accessing state:', e);
-                }
-            }
-            
-            // Способ 4: Из localStorage (Swagger UI хранит там авторизацию)
-            const swaggerAuth = localStorage.getItem('swagger-ui-auth');
-            if (swaggerAuth) {
-                try {
-                    const auth = JSON.parse(swaggerAuth);
-                    if (auth.BearerAuth) {
-                        let token = auth.BearerAuth.value || auth.BearerAuth;
-                        if (token && typeof token === 'string' && token !== 'string' && token.length > 20) {
-                            cachedToken = token;
-                            console.log('[Swagger Fix] Token found from localStorage');
-                            return token;
+                        // Альтернативный путь
+                        if (state.auth.data && state.auth.data.BearerAuth) {
+                            let token = state.auth.data.BearerAuth.value || state.auth.data.BearerAuth;
+                            if (debug) console.log('[Swagger Fix] 🔍 Token from state.auth.data.BearerAuth:', token?.substring(0, 30) + '...');
+                            if (token && typeof token === 'string' && token !== 'string' && token.length > 20) {
+                                if (debug) console.log('[Swagger Fix] ✅ Token found via state.auth.data');
+                                return token;
+                            }
+                        }
+                        // Проверяем все возможные пути в state.auth
+                        if (debug) {
+                            console.log('[Swagger Fix] 🔍 Checking all paths in state.auth...');
+                            function checkObject(obj, path = '') {
+                                for (const key in obj) {
+                                    const value = obj[key];
+                                    const currentPath = path ? path + '.' + key : key;
+                                    if (typeof value === 'string' && value.startsWith('eyJ') && value.length > 20) {
+                                        console.log('[Swagger Fix] 🔍 Found JWT token at:', currentPath, value.substring(0, 30) + '...');
+                                    } else if (typeof value === 'object' && value !== null) {
+                                        checkObject(value, currentPath);
+                                    }
+                                }
+                            }
+                            checkObject(state.auth, 'state.auth');
                         }
                     }
                 } catch(e) {
-                    console.log('[Swagger Fix] Error parsing localStorage:', e);
+                    if (debug) console.log('[Swagger Fix] Error accessing state:', e);
                 }
             }
             
-            // Способ 5: Ищем во всех ключах localStorage, которые могут содержать токен
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.includes('swagger') || key.includes('auth')) {
+            // Способ 3: Из localStorage Swagger UI (только если Swagger UI сохранил туда токен)
+            // Проверяем разные возможные ключи
+            const swaggerAuthKeys = ['swagger-ui-auth', 'swagger_auth', 'swaggerAuth'];
+            for (const key of swaggerAuthKeys) {
+                const swaggerAuth = localStorage.getItem(key);
+                if (swaggerAuth) {
                     try {
-                        const value = localStorage.getItem(key);
-                        if (value) {
-                            const parsed = JSON.parse(value);
-                            if (parsed && parsed.BearerAuth) {
-                                let token = parsed.BearerAuth.value || parsed.BearerAuth;
-                                if (token && typeof token === 'string' && token !== 'string' && token.length > 20) {
-                                    cachedToken = token;
-                                    console.log('[Swagger Fix] Token found from localStorage key:', key);
-                                    return token;
-                                }
+                        const auth = JSON.parse(swaggerAuth);
+                        if (debug) console.log('[Swagger Fix] 🔍 localStorage[' + key + ']:', auth);
+                        if (auth.BearerAuth) {
+                            let token = auth.BearerAuth.value || auth.BearerAuth;
+                            if (token && typeof token === 'string' && token !== 'string' && token.length > 20) {
+                                if (debug) console.log('[Swagger Fix] ✅ Token found via localStorage[' + key + ']');
+                                return token;
+                            }
+                        }
+                        // Проверяем альтернативные структуры
+                        if (auth.bearerAuth || auth.bearer || auth.token) {
+                            let token = auth.bearerAuth || auth.bearer || auth.token;
+                            if (token && typeof token === 'string' && token !== 'string' && token.length > 20) {
+                                if (debug) console.log('[Swagger Fix] ✅ Token found via localStorage[' + key + '] (alt structure)');
+                                return token;
                             }
                         }
                     } catch(e) {
-                        // Не JSON, пропускаем
+                        if (debug) console.log('[Swagger Fix] Error parsing localStorage[' + key + ']:', e);
                     }
                 }
+            }
+            
+            // Способ 4: Проверяем все ключи localStorage, содержащие 'swagger' или 'auth'
+            // И ищем токен напрямую в значениях
+            if (debug) {
+                console.log('[Swagger Fix] 🔍 Checking all localStorage keys...');
+            }
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('swagger') || key.includes('auth'))) {
+                    try {
+                        const value = localStorage.getItem(key);
+                        if (debug) console.log('[Swagger Fix] 🔍 localStorage[' + key + ']:', value?.substring(0, 100));
+                        
+                        // НЕ используем старый ключ swagger-fix-bearer-token
+                        // Токен должен быть установлен через Swagger UI и будет получен из state или currentAuthToken
+                    } catch(e) {
+                        // Игнорируем
+                    }
+                }
+            }
+            
+            // Способ 5: Используем токен из временного хранилища (если был установлен через Swagger UI)
+            if (currentAuthToken && tokenSource === 'swagger-ui') {
+                if (debug) console.log('[Swagger Fix] ✅ Token found from temporary storage (set via Swagger UI)');
+                return currentAuthToken;
             }
             
             return null;
         } catch(e) {
-            console.error('[Swagger Fix] Error getting auth token:', e);
+            if (debug) console.error('[Swagger Fix] Error getting auth token:', e);
             return null;
         }
     }
     
-    // Слушаем изменения в localStorage для обновления токена
-    window.addEventListener('storage', function(e) {
-        if (e.key && (e.key.includes('swagger') || e.key.includes('auth'))) {
-            cachedToken = null; // Сбрасываем кэш
-            console.log('[Swagger Fix] Storage changed, refreshing token cache');
-        }
-    });
-    
-    // Также слушаем события авторизации в Swagger UI
+    // Слушаем события авторизации в Swagger UI для логирования
     function setupSwaggerAuthListener() {
         if (window.ui && window.ui.getSystem) {
             try {
@@ -246,10 +197,9 @@
                 // Подписываемся на изменения состояния авторизации
                 system.subscribe((state) => {
                     if (state && state.auth) {
-                        cachedToken = null; // Сбрасываем кэш при изменении auth
                         const token = getAuthToken();
                         if (token) {
-                            console.log('[Swagger Fix] 🔑 Token updated via state subscription');
+                            console.log('[Swagger Fix] 🔑 Token updated via Swagger UI state');
                         }
                     }
                 });
@@ -262,57 +212,48 @@
     // Пытаемся настроить listener после загрузки Swagger UI
     setTimeout(setupSwaggerAuthListener, 1000);
     
+    // Функция для проверки, является ли эндпоинт публичным (не требует авторизации)
+    function isPublicEndpoint(url) {
+        const publicPaths = ['/api/auth/login', '/api/auth/register', '/api/auth/refresh', '/docs', '/redoc', '/openapi.json'];
+        return publicPaths.some(path => url.includes(path));
+    }
+    
     // Перехватываем fetch API (Swagger UI использует fetch)
     const originalFetch = window.fetch;
     window.fetch = function(url, options = {}) {
         options = options || {};
-        const isMultipart = options.body instanceof FormData;
         const urlStr = typeof url === 'string' ? url : url.toString();
         
-        // Проверяем, это запрос к нашему API
-        if (urlStr.includes('/api/') && isMultipart) {
-            // Получаем токен (будет искать в localStorage и DOM)
+        // Проверяем, это запрос к нашему API и не публичный эндпоинт
+        if (urlStr.includes('/api/') && !isPublicEndpoint(urlStr)) {
+            // Получаем токен ТОЛЬКО из Swagger UI (пользователь должен авторизоваться)
             const token = getAuthToken();
             
             if (token) {
-                // Создаем или используем существующие headers
-                if (!options.headers) {
-                    options.headers = {};
-                }
-                
-                // Преобразуем headers в объект, если это Headers
-                let headersObj = {};
+                // Обрабатываем разные типы headers
                 if (options.headers instanceof Headers) {
-                    options.headers.forEach((value, key) => {
-                        headersObj[key] = value;
-                    });
-                } else if (options.headers instanceof Object) {
-                    headersObj = options.headers;
-                }
-                
-                // Добавляем Authorization, если его нет
-                if (!headersObj['Authorization'] && !headersObj['authorization']) {
-                    headersObj['Authorization'] = 'Bearer ' + token;
-                    options.headers = headersObj;
-                    console.log('[Swagger Fix] ✅ Added Authorization header to multipart request:', urlStr);
+                    // Если это Headers объект, проверяем и добавляем токен
+                    if (!options.headers.has('Authorization')) {
+                        options.headers.set('Authorization', 'Bearer ' + token);
+                        console.log('[Swagger Fix] ✅ Added Authorization header (Headers) to:', urlStr);
+                    }
+                } else if (options.headers && typeof options.headers === 'object') {
+                    // Если это обычный объект
+                    if (!options.headers['Authorization'] && !options.headers['authorization']) {
+                        options.headers['Authorization'] = 'Bearer ' + token;
+                        console.log('[Swagger Fix] ✅ Added Authorization header (Object) to:', urlStr);
+                    }
                 } else {
-                    console.log('[Swagger Fix] ⚠️ Authorization header already exists');
+                    // Если headers отсутствуют или null/undefined, создаем новый объект
+                    options.headers = {
+                        'Authorization': 'Bearer ' + token
+                    };
+                    console.log('[Swagger Fix] ✅ Created headers with Authorization for:', urlStr);
                 }
             } else {
-                console.log('[Swagger Fix] ❌ No token available for request:', urlStr);
-                // Попробуем еще раз через небольшую задержку
-                console.log('[Swagger Fix] 🔍 Attempting to find token again...');
-                setTimeout(function() {
-                    const retryToken = getAuthToken();
-                    if (retryToken) {
-                        console.log('[Swagger Fix] ✅ Token found on retry!');
-                    } else {
-                        console.log('[Swagger Fix] ❌ Token still not found. Please check:');
-                        console.log('[Swagger Fix] 1. Did you click "Authorize" button?');
-                        console.log('[Swagger Fix] 2. Did you enter the token in BearerAuth field?');
-                        console.log('[Swagger Fix] 3. Did you click "Authorize" after entering token?');
-                    }
-                }, 100);
+                // Токен не найден - пользователь не авторизовался
+                // Не логируем каждый раз, чтобы не засорять консоль
+                // console.log('[Swagger Fix] ❌ No token for:', urlStr, '- Please authorize in Swagger UI');
             }
         }
         
@@ -338,10 +279,10 @@
     };
     
     XMLHttpRequest.prototype.send = function(data) {
-        const isMultipart = data instanceof FormData;
         const url = this._swaggerUrl;
         
-        if (url && url.includes('/api/') && isMultipart) {
+        // Проверяем, это запрос к нашему API и не публичный эндпоинт
+        if (url && url.includes('/api/') && !isPublicEndpoint(url)) {
             const token = getAuthToken();
             
             if (token) {
@@ -350,7 +291,7 @@
                 
                 if (!hasAuth) {
                     originalSetRequestHeader.call(this, 'Authorization', 'Bearer ' + token);
-                    console.log('[Swagger Fix] ✅ Added Authorization header to XHR multipart request:', url);
+                    console.log('[Swagger Fix] ✅ Added Authorization header to XHR request:', url);
                 }
             }
         }
@@ -398,7 +339,61 @@
         }
     }, 2000);
     
-    // Также слушаем клики на кнопку Authorize и кнопки закрытия модального окна
+    // Слушаем изменения в полях ввода в реальном времени (пока модальное окно открыто)
+    function setupInputListener() {
+        // Используем MutationObserver для отслеживания появления модального окна
+        const observer = new MutationObserver(function(mutations) {
+            // Ищем все поля ввода в модальных окнах
+            const modalInputs = document.querySelectorAll('[role="dialog"] input, [class*="modal"] input, [class*="dialog"] input');
+            modalInputs.forEach(function(input) {
+                // Проверяем, не слушаем ли мы уже это поле
+                if (!input._swaggerFixListener) {
+                    input._swaggerFixListener = true;
+                    
+                    // Слушаем изменения значения
+                    input.addEventListener('input', function(e) {
+                        const value = (e.target.value || '').trim();
+                        if (value && value.startsWith('eyJ') && value.length > 50) {
+                            currentAuthToken = value;
+                            tokenSource = 'swagger-ui';
+                            console.log('[Swagger Fix] 🔑 Token captured from input field (real-time):', value.substring(0, 30) + '...');
+                        }
+                    });
+                    
+                    // Также проверяем текущее значение
+                    const currentValue = (input.value || '').trim();
+                    if (currentValue && currentValue.startsWith('eyJ') && currentValue.length > 50) {
+                        currentAuthToken = currentValue;
+                        tokenSource = 'swagger-ui';
+                        console.log('[Swagger Fix] 🔑 Token found in input field:', currentValue.substring(0, 30) + '...');
+                    }
+                }
+            });
+        });
+        
+        // Наблюдаем за изменениями в body
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        // Также проверяем сразу
+        setTimeout(function() {
+            const modalInputs = document.querySelectorAll('[role="dialog"] input, [class*="modal"] input, [class*="dialog"] input');
+            modalInputs.forEach(function(input) {
+                const value = (input.value || '').trim();
+                if (value && value.startsWith('eyJ') && value.length > 50) {
+                    currentAuthToken = value;
+                    tokenSource = 'swagger-ui';
+                    console.log('[Swagger Fix] 🔑 Token found in input field (initial check):', value.substring(0, 30) + '...');
+                }
+            });
+        }, 500);
+    }
+    
+    setupInputListener();
+    
+    // Слушаем клики на кнопку Authorize для логирования
     document.addEventListener('click', function(e) {
         const target = e.target;
         const isAuthorizeBtn = target && (
@@ -410,35 +405,51 @@
         );
         
         if (isAuthorizeBtn) {
-            setTimeout(function() {
-                // Ищем токен в полях ввода после клика
-                const inputs = document.querySelectorAll('input');
-                let found = false;
-                for (let input of inputs) {
-                    const value = input.value || '';
-                    if (isValidToken(value)) {
-                        const token = value.replace(/^Bearer\s+/i, '').trim();
-                        saveToken(token);
-                        console.log('[Swagger Fix] 🔑 Token found and saved after Authorize click!');
-                        found = true;
+            console.log('[Swagger Fix] 🔄 Authorize button clicked');
+            
+            // НЕ очищаем токен - он уже должен быть сохранен из поля ввода
+            // Проверяем, есть ли уже сохраненный токен
+            if (currentAuthToken && tokenSource === 'swagger-ui') {
+                console.log('[Swagger Fix] 🔑 Using previously captured token:', currentAuthToken.substring(0, 30) + '...');
+            } else {
+                // Пытаемся найти токен в полях ввода (на случай, если модальное окно еще открыто)
+                const modalInputs = document.querySelectorAll('[role="dialog"] input, [class*="modal"] input, [class*="dialog"] input, input');
+                for (const input of modalInputs) {
+                    const value = (input.value || '').trim();
+                    if (value && value.startsWith('eyJ') && value.length > 50) {
+                        currentAuthToken = value;
+                        tokenSource = 'swagger-ui';
+                        console.log('[Swagger Fix] 🔑 Token captured from input field on Authorize click:', value.substring(0, 30) + '...');
                         break;
                     }
                 }
-                
-                // Проверяем сохраненный токен
-                if (!found) {
-                    const token = getAuthToken();
-                    if (token) {
-                        console.log('[Swagger Fix] 🔑 Token found in storage!');
-                    } else {
-                        console.log('[Swagger Fix] ⚠️ Token still not found after Authorize click');
-                        console.log('[Swagger Fix] 💡 Tip: Make sure you entered the token in the BearerAuth field and clicked "Authorize"');
-                        console.log('[Swagger Fix] 💡 The token should start with "eyJ" (JWT format)');
+            }
+            
+            // Проверяем Swagger UI state после задержки
+            setTimeout(function() {
+                const token = getAuthToken(true); // Включаем детальное логирование
+                if (token) {
+                    if (token !== currentAuthToken) {
+                        currentAuthToken = token;
+                        tokenSource = 'swagger-ui';
+                        console.log('[Swagger Fix] 🔑 Token found in Swagger UI state:', token.substring(0, 30) + '...');
                     }
+                    console.log('[Swagger Fix] ✅ Token authorized in Swagger UI successfully!');
+                } else if (currentAuthToken && tokenSource === 'swagger-ui') {
+                    console.log('[Swagger Fix] ✅ Using token captured from input field');
+                } else {
+                    console.log('[Swagger Fix] ⚠️ Token not found after Authorize click');
+                    console.log('[Swagger Fix] 💡 Tip: Make sure you entered the token in the BearerAuth field and clicked "Authorize"');
+                    console.log('[Swagger Fix] 💡 The token should start with "eyJ" (JWT format)');
                 }
-            }, 1500); // Увеличиваем задержку, чтобы Swagger UI успел сохранить токен
+            }, 1000); // Задержка для проверки state
         }
     });
     
-    console.log('[Swagger Fix] ✅ Multipart authorization fix loaded successfully!');
+    console.log('[Swagger Fix] ✅ Authorization fix v2.5 loaded successfully!');
+    console.log('[Swagger Fix] 💡 To use protected endpoints:');
+    console.log('[Swagger Fix] 1. Click "Authorize" button in Swagger UI');
+    console.log('[Swagger Fix] 2. Enter your JWT token in BearerAuth field');
+    console.log('[Swagger Fix] 3. Click "Authorize" to confirm');
+    console.log('[Swagger Fix] 4. The token will be automatically added to all protected API requests');
 })();

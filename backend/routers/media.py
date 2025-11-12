@@ -46,19 +46,28 @@ async def upload_media(
     return item
 
 @router.get("/", response_model=List[sch.MediaResponse])
-def list_media(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+def list_media(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Получить список всех медиа-файлов текущего пользователя"""
     return db.query(mdl.MediaItem).filter(mdl.MediaItem.user_id == current_user.id).all()
 
 @router.get("/{media_id}", response_model=sch.MediaResponse)
-def get_media(media_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    item = db.query(mdl.MediaItem).filter(mdl.MediaItem.id == media_id, mdl.MediaItem.user_id == current_user.id).first()
+def get_media(media_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Получить конкретный медиа-файл текущего пользователя по ID"""
+    item = db.query(mdl.MediaItem).filter(
+        mdl.MediaItem.id == media_id, 
+        mdl.MediaItem.user_id == current_user.id
+    ).first()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     return item
 
 @router.delete("/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_media(media_id: int, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    item = db.query(mdl.MediaItem).filter(mdl.MediaItem.id == media_id, mdl.MediaItem.user_id == current_user.id).first()
+def delete_media(media_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Удалить медиа-файл текущего пользователя по ID"""
+    item = db.query(mdl.MediaItem).filter(
+        mdl.MediaItem.id == media_id, 
+        mdl.MediaItem.user_id == current_user.id
+    ).first()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
     db.delete(item)
