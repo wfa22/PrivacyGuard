@@ -1,8 +1,10 @@
-# Node
+# Node.js
 node_modules/
 dist/
 build/
 .vite/
+
+# Logs
 *.log
 
 # Python
@@ -16,17 +18,30 @@ __pycache__/
 venv/
 *.sqlite3
 
-# IDE
+# IDEs and editors
 .vscode/
 .idea/
 
-# OS
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# Env
+# Environment variables
 .env.local
 .env.*
 
-# Output
+# Output files
 tree.json
+
+# Docker
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Ignore .git internals already tracked; no need to ignore .git dir or objects to avoid issues
+
+# Miscellaneous temp files you might want to ignore
+*.swp
+*.swo
+*.tmp
+*.bak
+*~
