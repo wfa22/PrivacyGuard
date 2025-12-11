@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from sqlalchemy.orm import Session
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 
 from core.config import settings
@@ -10,26 +10,36 @@ from models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse
 from services.auth_service import hash_password, verify_password
 from services.jwt_service import create_access_token, create_refresh_token
 
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+bearer_scheme = HTTPBearer()
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+) -> User:
+    if credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication scheme"
+        )
+
+    token = credentials.credentials
+
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
         user_id = payload.get("sub")
-        if user_id is None:
+        if not user_id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
         user = db.query(User).filter(User.id == int(user_id)).first()
-        if user is None:
+        if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
         return user
 
-    except (JWTError, ValueError):
+    except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
@@ -49,7 +59,6 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-
     return new_user
 
 
@@ -61,7 +70,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     access_token = create_access_token({"sub": str(user.id)})
     refresh_token = create_refresh_token({"sub": str(user.id)})
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="Bearer"
+    )
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -72,15 +86,21 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token type")
 
         user_id = token_data.get("sub")
-        if user_id is None:
+        if not user_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid refresh token")
 
         user = db.query(User).filter(User.id == int(user_id)).first()
-        if user is None:
+        if not user:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User not found")
 
         new_access = create_access_token({"sub": str(user_id)})
         new_refresh = create_refresh_token({"sub": str(user_id)})
-        return TokenResponse(access_token=new_access, refresh_token=new_refresh)
+
+        return TokenResponse(
+            access_token=new_access,
+            refresh_token=new_refresh,
+            token_type="Bearer"
+        )
+
     except JWTError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid refresh token")

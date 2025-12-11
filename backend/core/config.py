@@ -9,10 +9,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./app.db"
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["*"]
+    ALLOWED_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ]
 
     # MinIO / S3
-    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ENDPOINT: str = "minio:9000"  # 👉 внутренний адрес для backend
+    MINIO_PUBLIC_ENDPOINT: str = "localhost:9000"  # 👉 внешний адрес для браузера
     MINIO_ACCESS_KEY: str = "minioadmin"
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_BUCKET: str = "privacyguard"

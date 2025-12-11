@@ -87,8 +87,6 @@ def walk(root: Path, patterns):
             out.append({
                 "path": rel,
                 "type": "dir" if is_dir else "file",
-                "size": 0 if is_dir else st.st_size,
-                "mtime": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()
             })
             if is_dir:
                 rec(e)

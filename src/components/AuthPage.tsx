@@ -4,7 +4,9 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
-import { Shield, ArrowLeft } from 'lucide-react';
+import { Shield, ArrowLeft, AlertCircle } from 'lucide-react';
+import { api } from '../utils/api';
+import { Alert, AlertDescription } from './ui/alert';
 
 interface AuthPageProps {
   onNavigate: (page: any) => void;
@@ -17,11 +19,57 @@ export function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock authentication - in real app this would call an API
-    onLogin(true); // This will now auto-redirect to censoring page
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      if (!isLogin) {
+        // Registration
+        if (password !== confirmPassword) {
+          setError('Passwords do not match');
+          setIsLoading(false);
+          return;
+        }
+
+        if (!username.trim()) {
+          setError('Username is required');
+          setIsLoading(false);
+          return;
+        }
+
+        await api.register({
+          username: username.trim(),
+          email: email.trim(),
+          password,
+        });
+
+        // After registration, automatically log in
+        await api.login({
+          email: email.trim(),
+          password,
+        });
+
+        onLogin(true);
+      } else {
+        // Login
+        await api.login({
+          email: email.trim(),
+          password,
+        });
+
+        onLogin(true);
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleResetPassword = (e: React.FormEvent) => {
@@ -95,7 +143,28 @@ export function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {error && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
+              {!isLogin && (
+                <div>
+                  <Label htmlFor="username">Username</Label>
+                  <Input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Enter your username"
+                    required
+                  />
+                </div>
+              )}
+
               <div>
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -134,8 +203,8 @@ export function AuthPage({ onNavigate, onLogin }: AuthPageProps) {
                 </div>
               )}
 
-              <Button type="submit" className="w-full">
-                {isLogin ? 'Sign In' : 'Create Account'}
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                {isLoading ? 'Please wait...' : isLogin ? 'Sign In' : 'Create Account'}
               </Button>
 
               {isLogin && (

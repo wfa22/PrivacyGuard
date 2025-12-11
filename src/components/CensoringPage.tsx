@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Checkbox } from './ui/checkbox';
 import { Progress } from './ui/progress';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { Alert, AlertDescription } from './ui/alert';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Upload, 
@@ -18,6 +19,7 @@ import {
   AlertCircle,
   Zap
 } from 'lucide-react';
+import { api, MediaResponse } from '../utils/api';
 
 interface CensoringPageProps {
   onNavigate: (page: any) => void;
@@ -44,6 +46,7 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
   const [progress, setProgress] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const [currentStep, setCurrentStep] = useState<'upload' | 'processing' | 'complete'>('upload');
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (files: FileList | File[]) => {
@@ -87,35 +90,51 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
   const handleStartProcessing = async () => {
     if (uploadedFiles.length === 0) return;
     
+    setError(null);
     setCurrentStep('processing');
     setIsProcessing(true);
     setProgress(0);
+    setIsUploading(true);
     
-    // Simulate upload progress
-    for (let i = 0; i <= 50; i += 5) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-      setProgress(i);
+    try {
+      const uploadedMedia: MediaResponse[] = [];
+      
+      // Upload files one by one
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const file = uploadedFiles[i];
+        const fileProgress = ((i + 1) / uploadedFiles.length) * 100;
+        
+        try {
+          const media = await api.uploadMedia(file, `Processed with ${getCensoringText()}`);
+          uploadedMedia.push(media);
+          setProgress(fileProgress);
+        } catch (err: any) {
+          console.error(`Error uploading ${file.name}:`, err);
+          throw new Error(`Failed to upload ${file.name}: ${err.message}`);
+        }
+      }
+      
+      // Convert to ProcessedFile format
+      const processedFilesData: ProcessedFile[] = uploadedMedia.map((media) => ({
+        id: media.id.toString(),
+        name: media.original_url.split('/').pop() || `file-${media.id}`,
+        type: media.original_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 'video',
+        originalUrl: media.original_url,
+        processedUrl: media.processed_url || media.original_url,
+        size: 'Unknown' // Size not available from API
+      }));
+      
+      setProcessedFiles(processedFilesData);
+      setIsProcessing(false);
+      setIsUploading(false);
+      setCurrentStep('complete');
+      setUploadedFiles([]); // Clear uploaded files after processing
+    } catch (err: any) {
+      setError(err.message || 'Failed to process files. Please try again.');
+      setIsProcessing(false);
+      setIsUploading(false);
+      setCurrentStep('upload');
     }
-    
-    // Simulate processing
-    for (let i = 50; i <= 100; i += 5) {
-      await new Promise(resolve => setTimeout(resolve, 150));
-      setProgress(i);
-    }
-    
-    // Mock processed files
-    const mockProcessedFiles: ProcessedFile[] = uploadedFiles.map((file, index) => ({
-      id: `${Date.now()}-${index}`,
-      name: file.name,
-      type: file.type.startsWith('image/') ? 'image' : 'video',
-      originalUrl: URL.createObjectURL(file),
-      processedUrl: 'https://images.unsplash.com/photo-1646215218833-e217f7fffd18?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHhwaG90byUyMGVkaXRpbmclMjBibHVyJTIwY2Vuc29yaW5nfGVufDF8fHx8MTc1ODMwNDYzM3ww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral',
-      size: formatFileSize(file.size)
-    }));
-    
-    setProcessedFiles(mockProcessedFiles);
-    setIsProcessing(false);
-    setCurrentStep('complete');
   };
 
   const handleStartOver = () => {
@@ -126,10 +145,10 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
   };
 
   const downloadFile = (file: ProcessedFile) => {
-    // Mock download functionality
     const link = document.createElement('a');
     link.href = file.processedUrl;
     link.download = `censored_${file.name}`;
+    link.target = '_blank';
     link.click();
   };
 
@@ -164,6 +183,14 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
             Upload your photos or videos and let our AI automatically protect privacy by blurring sensitive information
           </p>
         </div>
+
+        {/* Error Alert */}
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {/* Progress Steps */}
         <div className="flex items-center justify-center mb-8">

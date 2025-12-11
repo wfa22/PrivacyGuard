@@ -20,6 +20,7 @@ class MediaItem(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     original_object_name = Column(String)
     original_url = Column(String)
+    original_filename = Column(String)
     processed = Column(Boolean, default=False)
     processed_url = Column(String, nullable=True)
     description = Column(String, nullable=True)
