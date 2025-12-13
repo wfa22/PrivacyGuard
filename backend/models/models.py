@@ -21,8 +21,11 @@ class MediaItem(Base):
     original_object_name = Column(String)
     original_url = Column(String)
     original_filename = Column(String)
+
     processed = Column(Boolean, default=False)
     processed_url = Column(String, nullable=True)
     description = Column(String, nullable=True)
+
+    processed_object_name = Column(String, nullable=True)
 
     user = relationship("User", back_populates="media_items")

@@ -1,6 +1,8 @@
 import uuid
 import os
+import io
 from typing import IO
+from datetime import timedelta
 
 from minio import Minio
 from core.config import settings
@@ -41,8 +43,29 @@ class StorageService:
 
         return object_name
 
+    def upload_bytes(self, data: bytes, filename: str, user_id: int) -> str:
+        """Залить готовые байты как объект."""
+        buf = io.BytesIO(data)
+        return self.upload_fileobj(buf, filename, user_id)
+
     def get_file_stream(self, object_name: str):
-        """
-        Вернуть поток файла из MinIO (для скачивания через backend).
-        """
+        """Стрим для скачивания через StreamingResponse."""
         return self.client.get_object(self.bucket, object_name)
+
+    def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
+        """URL для превью (если ты его используешь)."""
+        return self.client.presigned_get_object(
+            self.bucket,
+            object_name,
+            expires=timedelta(seconds=expires),
+        )
+
+    def download_bytes(self, object_name: str) -> bytes:
+        """Скачать объект как bytes (для обработки)."""
+        obj = self.client.get_object(self.bucket, object_name)
+        try:
+            data = obj.read()
+        finally:
+            obj.close()
+            obj.release_conn()
+        return data
