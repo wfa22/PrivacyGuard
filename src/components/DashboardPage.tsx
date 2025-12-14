@@ -23,7 +23,7 @@ interface ProcessedFile {
     id: string;
     name: string;
     type: 'image' | 'video';
-    thumbnail: string;
+    previewUrl: string; // ← blob URL для изображений
     processedDate: string;
     censorType: 'faces' | 'plates' | 'both';
     size: string;
@@ -40,24 +40,18 @@ export function DashboardPage({onNavigate}: DashboardPageProps) {
     const [error, setError] = useState<string | null>(null);
 
     // Convert MediaResponse to ProcessedFile
-    const convertMediaToFile = (media: MediaResponse): ProcessedFile => {
-        const url = media.processed_url || media.original_url;
-
-        // Последний сегмент пути
-        const lastPart = url.split('/').pop() || '';
-
-        // Убираем query-параметры (?...)
+    const convertMediaToFile = (media: MediaResponse): Omit<ProcessedFile, 'previewUrl'> => {
+        const originalUrl = media.original_url;
+        const lastPart = originalUrl.split('/').pop() || '';
         const cleanFileName = lastPart.split('?')[0] || `file-${media.id}`;
-
         const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(cleanFileName);
 
         return {
             id: media.id.toString(),
-            name: cleanFileName,       // 👈 вот это имя увидит пользователь и браузер
+            name: cleanFileName,
             type: isImage ? 'image' : 'video',
-            thumbnail: url,
-            processedDate: new Date().toISOString().split('T')[0], // Use current date as fallback
-            censorType: 'both', // Default, could be extracted from description
+            processedDate: new Date().toISOString().split('T')[0],
+            censorType: 'both',
             size: 'Unknown'
         };
     };
@@ -72,10 +66,30 @@ export function DashboardPage({onNavigate}: DashboardPageProps) {
         setIsLoading(true);
         setError(null);
 
+        // Отзываем старые blob URL
+        files.forEach(f => f.previewUrl && URL.revokeObjectURL(f.previewUrl));
+
         try {
             const mediaList = await api.listMedia();
             const convertedFiles = mediaList.map(convertMediaToFile);
-            setFiles(convertedFiles);
+
+            const filesWithPreviews = await Promise.all(
+                convertedFiles.map(async (file) => {
+                    if (file.type === 'image') {
+                        try {
+                            const blob = await api.downloadMedia(parseInt(file.id));
+                            const previewUrl = URL.createObjectURL(blob);
+                            return {...file, previewUrl};
+                        } catch (err) {
+                            console.warn(`Failed to load preview for ${file.id}`);
+                            return {...file, previewUrl: ''};
+                        }
+                    }
+                    return {...file, previewUrl: ''};
+                })
+            );
+
+            setFiles(filesWithPreviews);
         } catch (err: any) {
             setError(err.message || 'Failed to load media files');
             console.error('Error loading media:', err);
@@ -291,7 +305,7 @@ export function DashboardPage({onNavigate}: DashboardPageProps) {
                             <Card key={file.id} className="overflow-hidden">
                                 <div className="relative">
                                     <ImageWithFallback
-                                        src={file.thumbnail}
+                                        src={file.previewUrl || ''} // пустой для видео → покажется заглушка
                                         alt={file.name}
                                         className="w-full h-48 object-cover"
                                     />

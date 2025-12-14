@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
+from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -10,6 +11,8 @@ from models import models as mdl
 from services.storage_service import StorageService
 from routers.auth import get_current_user
 from models.models import User
+
+from services.processing_service import process_media_item
 
 router = APIRouter(prefix="/media", tags=["Media"])
 storage = StorageService()

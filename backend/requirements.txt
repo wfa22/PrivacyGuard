@@ -9,3 +9,6 @@ sqlalchemy
 minio
 alembic
 python-multipart
+numpy
+pillow
+ultralytics

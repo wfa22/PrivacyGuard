@@ -6,14 +6,14 @@ import { Progress } from './ui/progress';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { Alert, AlertDescription } from './ui/alert';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Upload, 
-  Eye, 
-  Car, 
-  Shield, 
-  Download, 
-  FileVideo, 
-  FileImage, 
+import {
+  Upload,
+  Eye,
+  Car,
+  Shield,
+  Download,
+  FileVideo,
+  FileImage,
   X,
   CheckCircle,
   AlertCircle,
@@ -27,10 +27,9 @@ interface CensoringPageProps {
 
 interface ProcessedFile {
   id: string;
-  name: string;
+  name: string;               // clean filename
   type: 'image' | 'video';
-  originalUrl: string;
-  processedUrl: string;
+  previewUrl: string;         // blob URL for preview (empty for video)
   size: string;
 }
 
@@ -50,10 +49,10 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (files: FileList | File[]) => {
-    const newFiles = Array.from(files).filter(file => 
+    const newFiles = Array.from(files).filter(file =>
       file.type.startsWith('image/') || file.type.startsWith('video/')
     );
-    
+
     if (newFiles.length > 0) {
       setUploadedFiles(prev => [...prev, ...newFiles]);
     }
@@ -89,21 +88,23 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
 
   const handleStartProcessing = async () => {
     if (uploadedFiles.length === 0) return;
-    
+
     setError(null);
     setCurrentStep('processing');
     setIsProcessing(true);
     setProgress(0);
     setIsUploading(true);
-    
+
+    const startTime = Date.now();
+
     try {
       const uploadedMedia: MediaResponse[] = [];
-      
+
       // Upload files one by one
       for (let i = 0; i < uploadedFiles.length; i++) {
         const file = uploadedFiles[i];
         const fileProgress = ((i + 1) / uploadedFiles.length) * 100;
-        
+
         try {
           const media = await api.uploadMedia(file, `Processed with ${getCensoringText()}`);
           uploadedMedia.push(media);
@@ -113,22 +114,46 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
           throw new Error(`Failed to upload ${file.name}: ${err.message}`);
         }
       }
-      
-      // Convert to ProcessedFile format
-      const processedFilesData: ProcessedFile[] = uploadedMedia.map((media) => ({
-        id: media.id.toString(),
-        name: media.original_url.split('/').pop() || `file-${media.id}`,
-        type: media.original_url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? 'image' : 'video',
-        originalUrl: media.original_url,
-        processedUrl: media.processed_url || media.original_url,
-        size: 'Unknown' // Size not available from API
-      }));
-      
+
+      // Ensure processing takes at least 1 second
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 1000) {
+        await new Promise(resolve => setTimeout(resolve, 1000 - elapsed));
+      }
+
+      // Convert to ProcessedFile with clean names and preview URLs
+      const processedFilesData = await Promise.all(
+        uploadedMedia.map(async (media) => {
+          const originalUrl = media.original_url;
+          const lastPart = originalUrl.split('/').pop() || '';
+          const cleanFileName = lastPart.split('?')[0] || `file-${media.id}`;
+          const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(cleanFileName);
+
+          let previewUrl = '';
+          if (isImage) {
+            try {
+              const blob = await api.downloadMedia(media.id);
+              previewUrl = URL.createObjectURL(blob);
+            } catch (err) {
+              console.warn(`Failed to load preview for ${media.id}`);
+            }
+          }
+
+          return {
+            id: media.id.toString(),
+            name: cleanFileName,
+            type: isImage ? 'image' : 'video',
+            previewUrl,
+            size: 'Unknown'
+          };
+        })
+      );
+
       setProcessedFiles(processedFilesData);
       setIsProcessing(false);
       setIsUploading(false);
       setCurrentStep('complete');
-      setUploadedFiles([]); // Clear uploaded files after processing
+      setUploadedFiles([]);
     } catch (err: any) {
       setError(err.message || 'Failed to process files. Please try again.');
       setIsProcessing(false);
@@ -138,22 +163,40 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
   };
 
   const handleStartOver = () => {
+    // Revoke blob URLs to prevent memory leaks
+    processedFiles.forEach(f => {
+      if (f.previewUrl) {
+        URL.revokeObjectURL(f.previewUrl);
+      }
+    });
     setUploadedFiles([]);
     setProcessedFiles([]);
     setProgress(0);
     setCurrentStep('upload');
   };
 
-  const downloadFile = (file: ProcessedFile) => {
-    const link = document.createElement('a');
-    link.href = file.processedUrl;
-    link.download = `censored_${file.name}`;
-    link.target = '_blank';
-    link.click();
+  const downloadFile = async (file: ProcessedFile) => {
+    try {
+      setError(null);
+      const blob = await api.downloadMedia(parseInt(file.id, 10));
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `censored_${file.name}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Error downloading media:', err);
+      setError(err.message || 'Failed to download file');
+    }
   };
 
-  const downloadAll = () => {
-    processedFiles.forEach(file => downloadFile(file));
+  const downloadAll = async () => {
+    for (const file of processedFiles) {
+      await downloadFile(file);
+    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -201,18 +244,18 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
               </div>
               <span className="font-medium">Upload</span>
             </div>
-            
+
             <div className={`w-12 h-px ${currentStep === 'processing' || currentStep === 'complete' ? 'bg-green-600' : 'bg-muted'}`} />
-            
+
             <div className={`flex items-center space-x-2 ${currentStep === 'processing' ? 'text-primary' : currentStep === 'complete' ? 'text-green-600' : 'text-muted-foreground'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${currentStep === 'processing' ? 'bg-primary text-primary-foreground' : currentStep === 'complete' ? 'bg-green-600 text-white' : 'bg-muted text-muted-foreground'}`}>
                 {currentStep === 'complete' ? <CheckCircle className="w-4 h-4" /> : currentStep === 'processing' ? <Zap className="w-4 h-4" /> : '2'}
               </div>
               <span className="font-medium">Process</span>
             </div>
-            
+
             <div className={`w-12 h-px ${currentStep === 'complete' ? 'bg-green-600' : 'bg-muted'}`} />
-            
+
             <div className={`flex items-center space-x-2 ${currentStep === 'complete' ? 'text-green-600' : 'text-muted-foreground'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center ${currentStep === 'complete' ? 'bg-green-600 text-white' : 'bg-muted text-muted-foreground'}`}>
                 {currentStep === 'complete' ? <CheckCircle className="w-4 h-4" /> : '3'}
@@ -258,7 +301,7 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center space-x-3 p-4 border rounded-lg hover:bg-accent/50 transition-colors">
                       <Checkbox
                         id="plates"
@@ -298,8 +341,8 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
                 <CardContent>
                   <div
                     className={`relative border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 cursor-pointer ${
-                      dragActive 
-                        ? 'border-primary bg-primary/5 scale-[1.02]' 
+                      dragActive
+                        ? 'border-primary bg-primary/5 scale-[1.02]'
                         : 'border-border hover:border-primary/50 hover:bg-accent/50'
                     }`}
                     onClick={() => fileInputRef.current?.click()}
@@ -317,7 +360,7 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
                     <p className="text-sm text-muted-foreground">
                       Supports JPEG, PNG, MP4, MOV and other common formats
                     </p>
-                    
+
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -379,7 +422,7 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
                       animate={{ opacity: 1, y: 0 }}
                       className="mt-6"
                     >
-                      <Button 
+                      <Button
                         onClick={handleStartProcessing}
                         disabled={!censorOptions.faces && !censorOptions.plates}
                         size="lg"
@@ -414,12 +457,12 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
                   >
                     <Zap className="w-full h-full text-primary" />
                   </motion.div>
-                  
+
                   <h3 className="text-2xl font-semibold mb-2">Processing your files...</h3>
                   <p className="text-muted-foreground mb-6">
                     Our AI is analyzing and censoring {getCensoringText()} in your {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''}
                   </p>
-                  
+
                   <div className="max-w-md mx-auto">
                     <div className="flex justify-between text-sm mb-2">
                       <span>{progress < 50 ? 'Uploading...' : 'Processing...'}</span>
@@ -455,7 +498,7 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
                       <div key={file.id} className="border rounded-lg overflow-hidden">
                         <div className="relative">
                           <ImageWithFallback
-                            src={file.processedUrl}
+                            src={file.previewUrl || ''}
                             alt={`Processed ${file.name}`}
                             className="w-full h-48 object-cover"
                           />
@@ -466,7 +509,9 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
                         <div className="p-4">
                           <div className="flex items-center justify-between">
                             <div>
-                              <p className="font-medium truncate">{file.name}</p>
+                              <p className="font-medium truncate" title={file.name}>
+                                {file.name}
+                              </p>
                               <p className="text-sm text-muted-foreground">{file.size}</p>
                             </div>
                             <Button size="sm" onClick={() => downloadFile(file)}>
@@ -478,7 +523,7 @@ export function CensoringPage({ onNavigate }: CensoringPageProps) {
                       </div>
                     ))}
                   </div>
-                  
+
                   <div className="flex flex-col sm:flex-row gap-3">
                     <Button onClick={downloadAll} className="flex-1">
                       <Download className="w-4 h-4 mr-2" />
