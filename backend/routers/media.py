@@ -9,13 +9,10 @@ from core.database import get_db
 from models import schemas as sch
 from models import models as mdl
 from services.storage_service import StorageService
-from routers.auth import get_current_user
+from routers.auth import get_current_user, require_role
 from models.models import User
 
 from services.processing_service import process_media_item
-
-router = APIRouter(prefix="/media", tags=["Media"])
-storage = StorageService()
 
 router = APIRouter(prefix="/media", tags=["Media"])
 storage = StorageService()
@@ -27,9 +24,29 @@ ALLOWED_CONTENT_TYPES = {
     "image/gif",
     "video/mp4",
     "video/mpeg",
-    "video/quicktime"
+    "video/quicktime",
 }
 
+
+def _build_response(item: mdl.MediaItem) -> sch.MediaResponse:
+    """Хелпер: собирает MediaResponse с presigned-URL."""
+    original_url = storage.get_presigned_url(item.original_object_name)
+    processed_url = (
+        storage.get_presigned_url(item.processed_object_name)
+        if item.processed_object_name
+        else None
+    )
+    return sch.MediaResponse(
+        id=item.id,
+        user_id=item.user_id,
+        original_url=original_url,
+        processed_url=processed_url,
+        processed=item.processed,
+        description=item.description,
+    )
+
+
+# ── Загрузка — любой авторизованный ──
 @router.post(
     "/upload",
     response_model=sch.MediaResponse,
@@ -58,29 +75,17 @@ async def upload_media(
             original_object_name=object_name,
             original_filename=file.filename,
             description=description,
-            processed=False,              # 👈 сначала не обработан
-            processed_object_name=None,   # 👈 ещё нет
+            processed=False,
+            processed_object_name=None,
         )
 
         db.add(item)
         db.commit()
         db.refresh(item)
 
-        # Запускаем обработку в фоне
         background_tasks.add_task(process_media_item, item.id)
 
-        # Сейчас в MediaResponse вернём URL только для оригинала
-        original_url = storage.get_presigned_url(item.original_object_name)
-        processed_url = None
-
-        return sch.MediaResponse(
-            id=item.id,
-            user_id=item.user_id,
-            original_url=original_url,
-            processed_url=processed_url,
-            processed=item.processed,
-            description=item.description,
-        )
+        return _build_response(item)
 
     except Exception:
         print("UPLOAD ERROR:")
@@ -88,108 +93,77 @@ async def upload_media(
         raise
 
 
+# ── Список медиа: user — свои, admin — все ──
 @router.get("/", response_model=List[sch.MediaResponse])
 def list_media(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    items = (
-        db.query(mdl.MediaItem)
-        .filter(mdl.MediaItem.user_id == current_user.id)
-        .all()
-    )
-
-    result: List[sch.MediaResponse] = []
-    for item in items:
-        original_url = storage.get_presigned_url(item.original_object_name)
-        processed_url = (
-            storage.get_presigned_url(item.processed_object_name)
-            if item.processed_object_name
-            else None
+    if current_user.role == "admin":
+        items = db.query(mdl.MediaItem).all()
+    else:
+        items = (
+            db.query(mdl.MediaItem)
+            .filter(mdl.MediaItem.user_id == current_user.id)
+            .all()
         )
 
-        result.append(
-            sch.MediaResponse(
-                id=item.id,
-                user_id=item.user_id,
-                original_url=original_url,
-                processed_url=processed_url,
-                processed=item.processed,
-                description=item.description,
-            )
-        )
-
-    return result
+    return [_build_response(item) for item in items]
 
 
+# ── Просмотр: user — только своё, admin — любое ──
 @router.get("/{media_id}", response_model=sch.MediaResponse)
 def get_media(
     media_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    item = (
-        db.query(mdl.MediaItem)
-        .filter(
-            mdl.MediaItem.id == media_id,
-            mdl.MediaItem.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Media not found"
-        )
+    item = db.query(mdl.MediaItem).filter(mdl.MediaItem.id == media_id).first()
 
-    original_url = storage.get_presigned_url(item.original_object_name)
-    processed_url = (
-        storage.get_presigned_url(item.processed_object_name)
-        if item.processed_object_name
-        else None
-    )
-
-    return sch.MediaResponse(
-        id=item.id,
-        user_id=item.user_id,
-        original_url=original_url,
-        processed_url=processed_url,
-        processed=item.processed,
-        description=item.description,
-    )
-
-
-@router.delete("/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_media(media_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    item = db.query(mdl.MediaItem).filter(
-        mdl.MediaItem.id == media_id,
-        mdl.MediaItem.user_id == current_user.id
-    ).first()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
+    if current_user.role != "admin" and item.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    return _build_response(item)
+
+
+# ── Удаление: user — только своё, admin — любое ──
+@router.delete("/{media_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_media(
+    media_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    item = db.query(mdl.MediaItem).filter(mdl.MediaItem.id == media_id).first()
+
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
+    if current_user.role != "admin" and item.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     db.delete(item)
     db.commit()
     return
 
 
+# ── Скачивание: user — только своё, admin — любое ──
 @router.get("/{media_id}/download")
 def download_media(
     media_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    item = (
-        db.query(mdl.MediaItem)
-        .filter(
-            mdl.MediaItem.id == media_id,
-            mdl.MediaItem.user_id == current_user.id,
-        )
-        .first()
-    )
+    item = db.query(mdl.MediaItem).filter(mdl.MediaItem.id == media_id).first()
+
     if not item:
         raise HTTPException(status_code=404, detail="Media not found")
 
-    # Если есть обработанная версия — отдаём её, иначе оригинал
+    if current_user.role != "admin" and item.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
     object_name = (
         item.processed_object_name
         if item.processed and item.processed_object_name

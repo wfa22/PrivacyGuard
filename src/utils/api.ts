@@ -7,6 +7,7 @@ export interface User {
     id: number;
     username: string;
     email: string;
+    role: string; // НОВОЕ
 }
 
 export interface UserCreate {
@@ -35,9 +36,14 @@ export interface MediaResponse {
     description: string | null;
 }
 
+export interface ChangeRoleRequest {
+    role: string;
+}
+
 // Token management
 const TOKEN_KEY = 'privacyguard_access_token';
 const REFRESH_TOKEN_KEY = 'privacyguard_refresh_token';
+const USER_KEY = 'privacyguard_user'; // НОВОЕ — кешируем юзера
 
 export const tokenStorage = {
     getToken: (): string | null => {
@@ -52,9 +58,17 @@ export const tokenStorage = {
     setRefreshToken: (token: string): void => {
         localStorage.setItem(REFRESH_TOKEN_KEY, token);
     },
+    getUser: (): User | null => {
+        const raw = localStorage.getItem(USER_KEY);
+        return raw ? JSON.parse(raw) : null;
+    },
+    setUser: (user: User): void => {
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+    },
     clear: (): void => {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(REFRESH_TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
     },
 };
 
@@ -86,11 +100,10 @@ class ApiClient {
         });
 
         if (!response.ok) {
-            const error = await response.json().catch(() => ({detail: response.statusText}));
+            const error = await response.json().catch(() => ({ detail: response.statusText }));
             throw new Error(error.detail || `HTTP error! status: ${response.status}`);
         }
 
-        // Handle 204 No Content
         if (response.status === 204) {
             return null as T;
         }
@@ -112,9 +125,12 @@ class ApiClient {
             body: JSON.stringify(credentials),
         });
 
-        // Store tokens
         tokenStorage.setToken(response.access_token);
         tokenStorage.setRefreshToken(response.refresh_token);
+
+        // Сразу загружаем и кешируем профиль с ролью
+        const user = await this.getCurrentUser();
+        tokenStorage.setUser(user);
 
         return response;
     }
@@ -127,10 +143,9 @@ class ApiClient {
 
         const response = await this.request<TokenResponse>('/api/auth/refresh', {
             method: 'POST',
-            body: JSON.stringify({refresh_token: refreshToken}),
+            body: JSON.stringify({ refresh_token: refreshToken }),
         });
 
-        // Update tokens
         tokenStorage.setToken(response.access_token);
         tokenStorage.setRefreshToken(response.refresh_token);
 
@@ -146,8 +161,6 @@ class ApiClient {
 
         const formData = new FormData();
         formData.append('file', file);
-        // Note: description is sent as a query parameter in the backend, but we'll send it in FormData
-        // The backend accepts it as an optional parameter
         if (description) {
             formData.append('description', description);
         }
@@ -156,13 +169,12 @@ class ApiClient {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                // Don't set Content-Type header - browser will set it automatically with boundary for FormData
             },
             body: formData,
         });
 
         if (!response.ok) {
-            const error = await response.json().catch(() => ({detail: response.statusText}));
+            const error = await response.json().catch(() => ({ detail: response.statusText }));
             throw new Error(error.detail || `HTTP error! status: ${response.status}`);
         }
 
@@ -177,30 +189,26 @@ class ApiClient {
         return this.request<MediaResponse>(`/api/media/${mediaId}`);
     }
 
-    async getMediaDownloadUrl(mediaId: number): Promise<string> {
-        const res = await this.request<{ url: string }>(`/api/media/${mediaId}/download`);
-        return res.url;
-    }
     async downloadMedia(mediaId: number): Promise<Blob> {
         const token = tokenStorage.getToken();
         if (!token) {
-          throw new Error('Not authenticated');
+            throw new Error('Not authenticated');
         }
 
         const response = await fetch(`${this.baseURL}/api/media/${mediaId}/download`, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
         });
 
         if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          throw new Error(`Download failed: ${response.status} ${response.statusText} ${text}`);
+            const text = await response.text().catch(() => '');
+            throw new Error(`Download failed: ${response.status} ${response.statusText} ${text}`);
         }
 
         return await response.blob();
-      }
+    }
 
     async deleteMedia(mediaId: number): Promise<void> {
         return this.request<void>(`/api/media/${mediaId}`, {
@@ -210,9 +218,28 @@ class ApiClient {
 
     // User endpoints
     async getCurrentUser(): Promise<User> {
-        return this.request<User>('/api/users/me');
+        const user = await this.request<User>('/api/users/me');
+        tokenStorage.setUser(user); // обновляем кеш
+        return user;
+    }
+
+    // ── Admin endpoints ──
+    async listUsers(): Promise<User[]> {
+        return this.request<User[]>('/api/users/');
+    }
+
+    async changeUserRole(userId: number, role: string): Promise<User> {
+        return this.request<User>(`/api/users/${userId}/role`, {
+            method: 'PATCH',
+            body: JSON.stringify({ role }),
+        });
+    }
+
+    async deleteUser(userId: number): Promise<void> {
+        return this.request<void>(`/api/users/${userId}`, {
+            method: 'DELETE',
+        });
     }
 }
 
 export const api = new ApiClient(API_BASE_URL);
-

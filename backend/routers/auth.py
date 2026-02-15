@@ -14,15 +14,18 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 bearer_scheme = HTTPBearer()
 
+VALID_ROLES = {"user", "admin"}
 
+
+# ─── Dependency: текущий пользователь ───
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ) -> User:
     if credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication scheme"
+            detail="Invalid authentication scheme",
         )
 
     token = credentials.credentials
@@ -43,6 +46,24 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
+# ─── Dependency-фабрика: проверка роли ───
+def require_role(*allowed_roles: str):
+    """
+    Возвращает dependency, которая пропускает только пользователей
+    с одной из перечисленных ролей. Иначе — 403.
+    """
+    def _check(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. Required role: {', '.join(allowed_roles)}",
+            )
+        return current_user
+    return _check
+
+
+# ─── Endpoints ───
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
@@ -55,6 +76,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         username=user.username,
         email=user.email,
         password_hash=hash_password(user.password),
+        role="user",
     )
     db.add(new_user)
     db.commit()
@@ -68,13 +90,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    access_token = create_access_token({"sub": str(user.id)})
-    refresh_token = create_refresh_token({"sub": str(user.id)})
+    access_token = create_access_token({"sub": str(user.id), "role": user.role})
+    refresh_token = create_refresh_token({"sub": str(user.id), "role": user.role})
 
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
-        token_type="Bearer"
+        token_type="Bearer",
     )
 
 
@@ -93,13 +115,13 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
         if not user:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User not found")
 
-        new_access = create_access_token({"sub": str(user_id)})
-        new_refresh = create_refresh_token({"sub": str(user_id)})
+        new_access = create_access_token({"sub": str(user_id), "role": user.role})
+        new_refresh = create_refresh_token({"sub": str(user_id), "role": user.role})
 
         return TokenResponse(
             access_token=new_access,
             refresh_token=new_refresh,
-            token_type="Bearer"
+            token_type="Bearer",
         )
 
     except JWTError:

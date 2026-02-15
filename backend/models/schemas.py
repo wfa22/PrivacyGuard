@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional
 
 
@@ -14,9 +14,9 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
+    role: str
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Auth / tokens
@@ -28,11 +28,16 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = "Bearer"  # привели к стандарту
+    token_type: str = "Bearer"
 
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+# Role management
+class ChangeRoleRequest(BaseModel):
+    role: str  # "user" | "admin"
 
 
 # Media schemas
@@ -48,5 +53,4 @@ class MediaResponse(BaseModel):
     processed: bool
     description: Optional[str]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

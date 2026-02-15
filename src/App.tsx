@@ -3,29 +3,30 @@ import { HomePage } from './components/HomePage';
 import { AuthPage } from './components/AuthPage';
 import { CensoringPage } from './components/CensoringPage';
 import { DashboardPage } from './components/DashboardPage';
+import { AdminPage } from './components/AdminPage';
 import { Header } from './components/Header';
-import { tokenStorage, api } from './utils/api';
+import { tokenStorage, api, User } from './utils/api';
 
-type Page = 'home' | 'auth' | 'censoring' | 'dashboard';
+type Page = 'home' | 'auth' | 'censoring' | 'dashboard' | 'admin';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  // Check authentication status on mount
   useEffect(() => {
     const checkAuth = async () => {
       const token = tokenStorage.getToken();
       if (token) {
         try {
-          // Verify token is valid by getting current user
-          await api.getCurrentUser();
+          const currentUser = await api.getCurrentUser();
+          setUser(currentUser);
           setIsLoggedIn(true);
         } catch (error) {
-          // Token is invalid, clear it
           tokenStorage.clear();
           setIsLoggedIn(false);
+          setUser(null);
         }
       }
       setIsCheckingAuth(false);
@@ -34,16 +35,24 @@ export default function App() {
     checkAuth();
   }, []);
 
-  const handleLogin = (loggedIn: boolean) => {
-    setIsLoggedIn(loggedIn);
+  const handleLogin = async (loggedIn: boolean) => {
     if (loggedIn) {
-      setCurrentPage('censoring'); // Auto-redirect to censoring page after login
+      try {
+        const currentUser = await api.getCurrentUser();
+        setUser(currentUser);
+        setIsLoggedIn(true);
+        setCurrentPage('censoring');
+      } catch {
+        setIsLoggedIn(false);
+        setUser(null);
+      }
     }
   };
 
   const handleLogout = () => {
     tokenStorage.clear();
     setIsLoggedIn(false);
+    setUser(null);
     setCurrentPage('home');
   };
 
@@ -55,18 +64,25 @@ export default function App() {
     }
   };
 
-  // Protected navigation - redirects to auth if trying to access protected pages while not logged in
   const handleNavigate = (page: Page) => {
     const protectedPages: Page[] = ['censoring', 'dashboard'];
-    
+    const adminPages: Page[] = ['admin'];
+
+    // Гость → на логин
     if (protectedPages.includes(page) && !isLoggedIn) {
       setCurrentPage('auth');
-    } else {
-      setCurrentPage(page);
+      return;
     }
+
+    // Не-админ пытается зайти в admin → на home
+    if (adminPages.includes(page) && user?.role !== 'admin') {
+      setCurrentPage('home');
+      return;
+    }
+
+    setCurrentPage(page);
   };
 
-  // Show loading state while checking authentication
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -87,7 +103,12 @@ export default function App() {
       case 'censoring':
         return <CensoringPage onNavigate={handleNavigate} />;
       case 'dashboard':
-        return <DashboardPage onNavigate={handleNavigate} />;
+        return <DashboardPage onNavigate={handleNavigate} user={user} />;
+      case 'admin':
+        if (user?.role !== 'admin') {
+          return <HomePage onNavigate={handleNavigate} onGetStarted={handleGetStarted} />;
+        }
+        return <AdminPage onNavigate={handleNavigate} currentUser={user} />;
       default:
         return <HomePage onNavigate={handleNavigate} onGetStarted={handleGetStarted} />;
     }
@@ -95,10 +116,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header 
-        currentPage={currentPage} 
-        onNavigate={handleNavigate} 
+      <Header
+        currentPage={currentPage}
+        onNavigate={handleNavigate}
         isLoggedIn={isLoggedIn}
+        user={user}
         onLogout={handleLogout}
       />
       {renderPage()}
