@@ -15,6 +15,20 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
+  // 5.5 — подписываемся на принудительный logout из interceptor
+  useEffect(() => {
+    api.onForceLogout = () => {
+      setIsLoggedIn(false);
+      setUser(null);
+      setCurrentPage('auth');
+    };
+
+    return () => {
+      api.onForceLogout = null;
+    };
+  }, []);
+
+  // 5.2 — восстановление состояния при загрузке
   useEffect(() => {
     const checkAuth = async () => {
       const token = tokenStorage.getToken();
@@ -23,7 +37,8 @@ export default function App() {
           const currentUser = await api.getCurrentUser();
           setUser(currentUser);
           setIsLoggedIn(true);
-        } catch (error) {
+        } catch {
+          // 5.5 — токен невалиден → очистка
           tokenStorage.clear();
           setIsLoggedIn(false);
           setUser(null);
@@ -49,8 +64,13 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    tokenStorage.clear();
+  // 5.1 — серверный logout: отзываем refresh token на бэкенде
+  const handleLogout = async () => {
+    try {
+      await api.logout(); // POST /auth/logout + tokenStorage.clear()
+    } catch {
+      tokenStorage.clear(); // fallback
+    }
     setIsLoggedIn(false);
     setUser(null);
     setCurrentPage('home');
@@ -64,17 +84,16 @@ export default function App() {
     }
   };
 
+  // 5.4 — защита маршрутов по состоянию auth и ролям
   const handleNavigate = (page: Page) => {
     const protectedPages: Page[] = ['censoring', 'dashboard'];
     const adminPages: Page[] = ['admin'];
 
-    // Гость → на логин
     if (protectedPages.includes(page) && !isLoggedIn) {
       setCurrentPage('auth');
       return;
     }
 
-    // Не-админ пытается зайти в admin → на home
     if (adminPages.includes(page) && user?.role !== 'admin') {
       setCurrentPage('home');
       return;

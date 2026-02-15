@@ -1,10 +1,15 @@
 """
-Тесты RBAC для PrivacyGuard.
+Тесты для PrivacyGuard.
 
 Покрывают:
-  5.1 — существующая функциональность MVP не нарушена
-  5.2 — права доступа применяются стабильно для всех ролей
-  5.3 — неавторизованные и недостаточно привилегированные действия блокируются
+  6.1 — вход с корректными и некорректными учетными данными
+  6.2 — доступ к защищённым ресурсам с валидным и невалидным access token
+  6.3 — обновление access token через refresh token (ротация)
+  6.4 — отзыв сессии при выходе и блокирование дальнейшего обновления
+  6.5 — проверка ограничений ролей и запрет операций вне полномочий
+  7.1 — существующая функциональность MVP сохранена
+  7.2 — сессии обрабатываются предсказуемо и безопасно
+  7.3 — клиентская и серверная части используют единые правила доступа
 """
 
 import os
@@ -12,10 +17,7 @@ import sys
 import io
 import pytest
 
-# ── Чтобы импорты backend работали ──
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-# ── Переключаем на тестовую SQLite in-memory ДО импорта приложения ──
 os.environ["DATABASE_URL"] = "sqlite://"
 
 from fastapi.testclient import TestClient
@@ -28,16 +30,13 @@ from core.database import Base, get_db
 from models.models import User
 from services.auth_service import hash_password
 
-# ── Тестовая БД in-memory с общим соединением ──
-# StaticPool + check_same_thread=False нужны, чтобы in-memory БД
-# была доступна из разных потоков/соединений
 engine = create_engine(
     "sqlite://",
     connect_args={"check_same_thread": False},
     poolclass=StaticPool,
 )
 
-# Включаем поддержку FK для SQLite (по умолчанию выключена)
+
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
@@ -60,12 +59,11 @@ app.dependency_overrides[get_db] = override_get_db
 
 
 # ══════════════════════════════════════════════════
-# FIXTURES
+# FIXTURES & HELPERS
 # ══════════════════════════════════════════════════
 
 @pytest.fixture(autouse=True)
 def setup_database():
-    """Пересоздаём таблицы перед каждым тестом."""
     Base.metadata.create_all(bind=engine)
     yield
     Base.metadata.drop_all(bind=engine)
@@ -85,8 +83,7 @@ def db_session():
         db.close()
 
 
-def create_user_in_db(db, username: str, email: str, password: str, role: str = "user") -> User:
-    """Хелпер: создаёт пользователя напрямую в БД."""
+def create_user_in_db(db, username, email, password, role="user"):
     user = User(
         username=username,
         email=email,
@@ -99,55 +96,38 @@ def create_user_in_db(db, username: str, email: str, password: str, role: str = 
     return user
 
 
-def login_user(client_: TestClient, email: str, password: str) -> str:
-    """Хелпер: логинит пользователя и возвращает access_token."""
+def login_user(client_, email, password):
     resp = client_.post("/api/auth/login", json={"email": email, "password": password})
     assert resp.status_code == 200, f"Login failed: {resp.text}"
     return resp.json()["access_token"]
 
 
-def auth_header(token: str) -> dict:
-    """Хелпер: заголовок авторизации."""
+def login_full(client_, email, password):
+    """Возвращает оба токена: (access_token, refresh_token)."""
+    resp = client_.post("/api/auth/login", json={"email": email, "password": password})
+    assert resp.status_code == 200, f"Login failed: {resp.text}"
+    data = resp.json()
+    return data["access_token"], data["refresh_token"]
+
+
+def auth_header(token):
     return {"Authorization": f"Bearer {token}"}
 
 
 # ══════════════════════════════════════════════════
-# 5.1 — СУЩЕСТВУЮЩАЯ ФУНКЦИОНАЛЬНОСТЬ НЕ НАРУШЕНА
+# 6.1 — ВХОД С КОРРЕКТНЫМИ И НЕКОРРЕКТНЫМИ ДАННЫМИ
 # ══════════════════════════════════════════════════
 
-class TestBasicFunctionality:
-    """Проверяем, что базовые сценарии MVP работают после RBAC."""
+class TestLogin:
+    """6.1 — вход с корректными и некорректными учетными данными."""
 
-    def test_register_new_user(self, client):
-        """Регистрация нового пользователя работает."""
-        resp = client.post("/api/auth/register", json={
-            "username": "testuser",
-            "email": "test@example.com",
-            "password": "password123",
-        })
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["username"] == "testuser"
-        assert data["email"] == "test@example.com"
-        assert data["role"] == "user"  # по умолчанию user
-
-    def test_register_duplicate_email(self, client):
-        """Повторная регистрация с тем же email — 400."""
-        payload = {"username": "user1", "email": "dup@example.com", "password": "pass123"}
-        resp1 = client.post("/api/auth/register", json=payload)
-        assert resp1.status_code == 201
-
-        payload["username"] = "user2"
-        resp = client.post("/api/auth/register", json=payload)
-        assert resp.status_code == 400
-
-    def test_login_success(self, client, db_session):
-        """Логин с корректными данными возвращает токены."""
-        create_user_in_db(db_session, "loginuser", "login@example.com", "secret")
+    def test_login_correct_credentials(self, client, db_session):
+        """Корректный email + пароль → 200 + оба токена."""
+        create_user_in_db(db_session, "user1", "user1@test.com", "password123")
 
         resp = client.post("/api/auth/login", json={
-            "email": "login@example.com",
-            "password": "secret",
+            "email": "user1@test.com",
+            "password": "password123",
         })
         assert resp.status_code == 200
         data = resp.json()
@@ -156,124 +136,362 @@ class TestBasicFunctionality:
         assert data["token_type"] == "Bearer"
 
     def test_login_wrong_password(self, client, db_session):
-        """Логин с неверным паролем — 401."""
-        create_user_in_db(db_session, "wrongpass", "wrong@example.com", "correct")
+        """Неверный пароль → 401."""
+        create_user_in_db(db_session, "user2", "user2@test.com", "correct")
 
         resp = client.post("/api/auth/login", json={
-            "email": "wrong@example.com",
-            "password": "incorrect",
+            "email": "user2@test.com",
+            "password": "wrong",
         })
         assert resp.status_code == 401
 
-    def test_get_current_user(self, client, db_session):
-        """GET /api/users/me возвращает текущего пользователя."""
-        create_user_in_db(db_session, "meuser", "me@example.com", "pass123")
-        token = login_user(client, "me@example.com", "pass123")
+    def test_login_nonexistent_email(self, client):
+        """Несуществующий email → 401."""
+        resp = client.post("/api/auth/login", json={
+            "email": "nobody@test.com",
+            "password": "any",
+        })
+        assert resp.status_code == 401
 
-        resp = client.get("/api/users/me", headers=auth_header(token))
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["username"] == "meuser"
-        assert data["role"] == "user"
+    def test_login_empty_password(self, client, db_session):
+        """Пустой пароль → 401 или 422."""
+        create_user_in_db(db_session, "user3", "user3@test.com", "pass")
 
-    def test_refresh_token(self, client, db_session):
-        """Refresh token выдаёт новую пару токенов."""
-        create_user_in_db(db_session, "refreshuser", "refresh@example.com", "pass")
-        login_resp = client.post("/api/auth/login", json={
-            "email": "refresh@example.com",
+        resp = client.post("/api/auth/login", json={
+            "email": "user3@test.com",
+            "password": "",
+        })
+        assert resp.status_code in (401, 422)
+
+    def test_login_invalid_email_format(self, client):
+        """Невалидный формат email → 422."""
+        resp = client.post("/api/auth/login", json={
+            "email": "not-an-email",
             "password": "pass",
         })
-        refresh_token = login_resp.json()["refresh_token"]
+        assert resp.status_code == 422
 
-        resp = client.post("/api/auth/refresh", json={"refresh_token": refresh_token})
+    def test_register_then_login(self, client):
+        """Регистрация + вход тем же паролем → работает."""
+        client.post("/api/auth/register", json={
+            "username": "newuser",
+            "email": "new@test.com",
+            "password": "mypass",
+        })
+
+        resp = client.post("/api/auth/login", json={
+            "email": "new@test.com",
+            "password": "mypass",
+        })
         assert resp.status_code == 200
-        assert "access_token" in resp.json()
+
+    def test_register_duplicate_email(self, client):
+        """Повторная регистрация с тем же email → 400."""
+        payload = {"username": "u1", "email": "dup@test.com", "password": "pass"}
+        assert client.post("/api/auth/register", json=payload).status_code == 201
+
+        payload["username"] = "u2"
+        assert client.post("/api/auth/register", json=payload).status_code == 400
+
+    def test_register_always_user_role(self, client):
+        """Регистрация всегда даёт role=user."""
+        resp = client.post("/api/auth/register", json={
+            "username": "newbie",
+            "email": "newbie@test.com",
+            "password": "pass",
+        })
+        assert resp.status_code == 201
+        assert resp.json()["role"] == "user"
 
 
 # ══════════════════════════════════════════════════
-# 5.2 — ПРАВА ДОСТУПА СТАБИЛЬНЫ ДЛЯ ВСЕХ РОЛЕЙ
+# 6.2 — ДОСТУП С ВАЛИДНЫМ И НЕВАЛИДНЫМ ACCESS TOKEN
 # ══════════════════════════════════════════════════
 
-class TestUserRolePermissions:
-    """Проверяем, что обычный user может делать то, что ему разрешено."""
+class TestAccessToken:
+    """6.2 — доступ к защищённым ресурсам с валидным/невалидным AT."""
 
-    def test_user_can_get_own_profile(self, client, db_session):
-        create_user_in_db(db_session, "user1", "user1@example.com", "pass")
-        token = login_user(client, "user1@example.com", "pass")
+    def test_valid_token_access(self, client, db_session):
+        """Валидный AT → доступ к /users/me."""
+        create_user_in_db(db_session, "valid", "valid@test.com", "pass")
+        token = login_user(client, "valid@test.com", "pass")
 
         resp = client.get("/api/users/me", headers=auth_header(token))
         assert resp.status_code == 200
-        assert resp.json()["username"] == "user1"
+        assert resp.json()["email"] == "valid@test.com"
 
-    def test_user_cannot_list_all_users(self, client, db_session):
-        """User не может получить список всех пользователей — 403."""
-        create_user_in_db(db_session, "user2", "user2@example.com", "pass")
-        token = login_user(client, "user2@example.com", "pass")
+    def test_no_token(self, client):
+        """Без токена → 401/403."""
+        resp = client.get("/api/users/me")
+        assert resp.status_code in (401, 403)
+
+    def test_invalid_token(self, client):
+        """Мусорный токен → 401."""
+        resp = client.get("/api/users/me", headers=auth_header("invalid.token.here"))
+        assert resp.status_code == 401
+
+    def test_random_string_token(self, client):
+        """Произвольная строка → 401."""
+        resp = client.get("/api/users/me", headers=auth_header("abc123"))
+        assert resp.status_code == 401
+
+    def test_refresh_token_cannot_be_used_as_access(self, client, db_session):
+        """7.2 — Refresh token нельзя использовать как access token."""
+        create_user_in_db(db_session, "rtuser", "rt@test.com", "pass")
+        _, refresh_token = login_full(client, "rt@test.com", "pass")
+
+        resp = client.get("/api/users/me", headers=auth_header(refresh_token))
+        assert resp.status_code == 401
+
+    def test_no_token_on_all_protected_endpoints(self, client):
+        """Без токена все защищённые endpoint'ы возвращают 401/403."""
+        endpoints = [
+            ("GET", "/api/users/me"),
+            ("GET", "/api/users/"),
+            ("GET", "/api/media/"),
+            ("DELETE", "/api/media/1"),
+            ("PATCH", "/api/users/1/role"),
+            ("DELETE", "/api/users/1"),
+        ]
+        for method, url in endpoints:
+            resp = client.request(method, url)
+            assert resp.status_code in (401, 403), f"{method} {url} returned {resp.status_code}"
+
+
+# ══════════════════════════════════════════════════
+# 6.3 — ОБНОВЛЕНИЕ ACCESS TOKEN ЧЕРЕЗ REFRESH TOKEN
+# ══════════════════════════════════════════════════
+
+class TestRefreshToken:
+    """6.3 — обновление AT через RT + ротация."""
+
+    def test_refresh_returns_new_tokens(self, client, db_session):
+        """Refresh выдаёт новую пару AT + RT."""
+        create_user_in_db(db_session, "ref1", "ref1@test.com", "pass")
+        _, rt = login_full(client, "ref1@test.com", "pass")
+
+        resp = client.post("/api/auth/refresh", json={"refresh_token": rt})
+        assert resp.status_code == 200
+
+        data = resp.json()
+        assert "access_token" in data
+        assert "refresh_token" in data
+
+    def test_new_access_token_works(self, client, db_session):
+        """Новый AT после refresh работает для доступа к API."""
+        create_user_in_db(db_session, "ref2", "ref2@test.com", "pass")
+        _, rt = login_full(client, "ref2@test.com", "pass")
+
+        refresh_resp = client.post("/api/auth/refresh", json={"refresh_token": rt})
+        new_at = refresh_resp.json()["access_token"]
+
+        resp = client.get("/api/users/me", headers=auth_header(new_at))
+        assert resp.status_code == 200
+        assert resp.json()["username"] == "ref2"
+
+    def test_old_refresh_token_revoked_after_rotation(self, client, db_session):
+        """6.3 — После ротации старый RT больше не принимается."""
+        create_user_in_db(db_session, "rot1", "rot1@test.com", "pass")
+        _, old_rt = login_full(client, "rot1@test.com", "pass")
+
+        # Используем RT → получаем новую пару
+        resp1 = client.post("/api/auth/refresh", json={"refresh_token": old_rt})
+        assert resp1.status_code == 200
+
+        # Пытаемся использовать старый RT повторно
+        resp2 = client.post("/api/auth/refresh", json={"refresh_token": old_rt})
+        assert resp2.status_code == 401
+
+    def test_chained_rotation(self, client, db_session):
+        """Цепочка ротаций: RT₁→RT₂→RT₃ работает."""
+        create_user_in_db(db_session, "chain", "chain@test.com", "pass")
+        _, rt = login_full(client, "chain@test.com", "pass")
+
+        for i in range(3):
+            resp = client.post("/api/auth/refresh", json={"refresh_token": rt})
+            assert resp.status_code == 200, f"Rotation {i+1} failed"
+            rt = resp.json()["refresh_token"]
+
+        # Финальный AT работает
+        final_at = resp.json()["access_token"]
+        resp = client.get("/api/users/me", headers=auth_header(final_at))
+        assert resp.status_code == 200
+
+    def test_invalid_refresh_token(self, client):
+        """Невалидный RT → 401."""
+        resp = client.post("/api/auth/refresh", json={"refresh_token": "garbage"})
+        assert resp.status_code == 401
+
+    def test_access_token_cannot_be_used_as_refresh(self, client, db_session):
+        """AT нельзя использовать вместо RT для refresh."""
+        create_user_in_db(db_session, "atref", "atref@test.com", "pass")
+        at, _ = login_full(client, "atref@test.com", "pass")
+
+        resp = client.post("/api/auth/refresh", json={"refresh_token": at})
+        assert resp.status_code == 401
+
+
+# ══════════════════════════════════════════════════
+# 6.4 — LOGOUT И БЛОКИРОВАНИЕ ДАЛЬНЕЙШЕГО ОБНОВЛЕНИЯ
+# ══════════════════════════════════════════════════
+
+class TestLogout:
+    """6.4 — отзыв сессии при выходе."""
+
+    def test_logout_revokes_refresh_token(self, client, db_session):
+        """После logout старый RT не принимается для refresh."""
+        create_user_in_db(db_session, "logout1", "logout1@test.com", "pass")
+        at, rt = login_full(client, "logout1@test.com", "pass")
+
+        # Logout
+        resp = client.post(
+            "/api/auth/logout",
+            json={"refresh_token": rt},
+            headers=auth_header(at),
+        )
+        assert resp.status_code == 204
+
+        # Пробуем refresh с отозванным RT
+        resp2 = client.post("/api/auth/refresh", json={"refresh_token": rt})
+        assert resp2.status_code == 401
+
+    def test_logout_does_not_affect_other_sessions(self, client, db_session):
+        """Logout одной сессии не отзывает другую."""
+        create_user_in_db(db_session, "multi", "multi@test.com", "pass")
+
+        # Две сессии (два логина)
+        at1, rt1 = login_full(client, "multi@test.com", "pass")
+        at2, rt2 = login_full(client, "multi@test.com", "pass")
+
+        # Logout первой сессии
+        client.post(
+            "/api/auth/logout",
+            json={"refresh_token": rt1},
+            headers=auth_header(at1),
+        )
+
+        # Вторая сессия ещё работает
+        resp = client.post("/api/auth/refresh", json={"refresh_token": rt2})
+        assert resp.status_code == 200
+
+    def test_relogin_after_logout(self, client, db_session):
+        """После logout можно залогиниться заново."""
+        create_user_in_db(db_session, "relog", "relog@test.com", "pass")
+        at, rt = login_full(client, "relog@test.com", "pass")
+
+        # Logout
+        client.post(
+            "/api/auth/logout",
+            json={"refresh_token": rt},
+            headers=auth_header(at),
+        )
+
+        # Новый логин работает
+        at2, rt2 = login_full(client, "relog@test.com", "pass")
+
+        resp = client.get("/api/users/me", headers=auth_header(at2))
+        assert resp.status_code == 200
+
+    def test_reuse_detection_revokes_all(self, client, db_session):
+        """7.2 — Повторное использование отозванного RT отзывает ВСЕ сессии."""
+        create_user_in_db(db_session, "reuse", "reuse@test.com", "pass")
+        _, rt1 = login_full(client, "reuse@test.com", "pass")
+
+        # Ротация: RT1 → RT2
+        resp1 = client.post("/api/auth/refresh", json={"refresh_token": rt1})
+        assert resp1.status_code == 200
+        rt2 = resp1.json()["refresh_token"]
+
+        # Повторное использование RT1 (уже отозван) → reuse detection
+        resp2 = client.post("/api/auth/refresh", json={"refresh_token": rt1})
+        assert resp2.status_code == 401
+
+        # RT2 тоже должен быть отозван (все токены пользователя)
+        resp3 = client.post("/api/auth/refresh", json={"refresh_token": rt2})
+        assert resp3.status_code == 401
+
+
+# ══════════════════════════════════════════════════
+# 6.5 — ОГРАНИЧЕНИЯ РОЛЕЙ
+# ══════════════════════════════════════════════════
+
+class TestRoleRestrictions:
+    """6.5 — проверка ограничений ролей."""
+
+    def test_user_can_get_own_profile(self, client, db_session):
+        create_user_in_db(db_session, "u1", "u1@test.com", "pass")
+        token = login_user(client, "u1@test.com", "pass")
+
+        resp = client.get("/api/users/me", headers=auth_header(token))
+        assert resp.status_code == 200
+
+    def test_user_cannot_list_users(self, client, db_session):
+        create_user_in_db(db_session, "u2", "u2@test.com", "pass")
+        token = login_user(client, "u2@test.com", "pass")
 
         resp = client.get("/api/users/", headers=auth_header(token))
         assert resp.status_code == 403
 
-    def test_user_cannot_get_other_user_profile(self, client, db_session):
-        """User не может смотреть чужой профиль — 403."""
-        user1 = create_user_in_db(db_session, "userA", "a@example.com", "pass")
-        create_user_in_db(db_session, "userB", "b@example.com", "pass")
-        token_b = login_user(client, "b@example.com", "pass")
+    def test_user_cannot_view_other_profile(self, client, db_session):
+        user_a = create_user_in_db(db_session, "uA", "a@test.com", "pass")
+        create_user_in_db(db_session, "uB", "b@test.com", "pass")
+        token_b = login_user(client, "b@test.com", "pass")
 
-        resp = client.get(f"/api/users/{user1.id}", headers=auth_header(token_b))
+        resp = client.get(f"/api/users/{user_a.id}", headers=auth_header(token_b))
         assert resp.status_code == 403
 
     def test_user_cannot_change_roles(self, client, db_session):
-        """User не может менять роли — 403."""
-        user1 = create_user_in_db(db_session, "target", "target@example.com", "pass")
-        create_user_in_db(db_session, "attacker", "attacker@example.com", "pass")
-        token = login_user(client, "attacker@example.com", "pass")
+        target = create_user_in_db(db_session, "target", "target@test.com", "pass")
+        create_user_in_db(db_session, "attacker", "attacker@test.com", "pass")
+        token = login_user(client, "attacker@test.com", "pass")
 
         resp = client.patch(
-            f"/api/users/{user1.id}/role",
+            f"/api/users/{target.id}/role",
             json={"role": "admin"},
             headers=auth_header(token),
         )
         assert resp.status_code == 403
 
-    def test_user_cannot_delete_other_users(self, client, db_session):
-        """User не может удалять пользователей — 403."""
-        victim = create_user_in_db(db_session, "victim", "victim@example.com", "pass")
-        create_user_in_db(db_session, "hacker", "hacker@example.com", "pass")
-        token = login_user(client, "hacker@example.com", "pass")
+    def test_user_cannot_delete_users(self, client, db_session):
+        victim = create_user_in_db(db_session, "victim", "victim@test.com", "pass")
+        create_user_in_db(db_session, "hacker", "hacker@test.com", "pass")
+        token = login_user(client, "hacker@test.com", "pass")
 
         resp = client.delete(f"/api/users/{victim.id}", headers=auth_header(token))
         assert resp.status_code == 403
 
+    def test_user_cannot_self_promote(self, client, db_session):
+        user = create_user_in_db(db_session, "sneaky", "sneaky@test.com", "pass")
+        token = login_user(client, "sneaky@test.com", "pass")
 
-class TestAdminRolePermissions:
-    """Проверяем, что admin может делать всё что ему разрешено."""
+        resp = client.patch(
+            f"/api/users/{user.id}/role",
+            json={"role": "admin"},
+            headers=auth_header(token),
+        )
+        assert resp.status_code == 403
 
-    def test_admin_can_list_all_users(self, client, db_session):
-        """Admin может получить список всех пользователей."""
-        create_user_in_db(db_session, "admin1", "admin@example.com", "pass", role="admin")
-        create_user_in_db(db_session, "regular", "regular@example.com", "pass")
-        token = login_user(client, "admin@example.com", "pass")
+    def test_admin_can_list_users(self, client, db_session):
+        create_user_in_db(db_session, "adm", "adm@test.com", "pass", role="admin")
+        create_user_in_db(db_session, "reg", "reg@test.com", "pass")
+        token = login_user(client, "adm@test.com", "pass")
 
         resp = client.get("/api/users/", headers=auth_header(token))
         assert resp.status_code == 200
-        users = resp.json()
-        assert len(users) == 2
+        assert len(resp.json()) == 2
 
     def test_admin_can_view_any_user(self, client, db_session):
-        """Admin может просматривать любой профиль."""
-        create_user_in_db(db_session, "admin2", "admin2@example.com", "pass", role="admin")
-        regular = create_user_in_db(db_session, "somebody", "somebody@example.com", "pass")
-        token = login_user(client, "admin2@example.com", "pass")
+        create_user_in_db(db_session, "adm2", "adm2@test.com", "pass", role="admin")
+        regular = create_user_in_db(db_session, "someone", "someone@test.com", "pass")
+        token = login_user(client, "adm2@test.com", "pass")
 
         resp = client.get(f"/api/users/{regular.id}", headers=auth_header(token))
         assert resp.status_code == 200
-        assert resp.json()["username"] == "somebody"
 
-    def test_admin_can_change_user_role(self, client, db_session):
-        """Admin может менять роли других пользователей."""
-        create_user_in_db(db_session, "superadmin", "super@example.com", "pass", role="admin")
-        target = create_user_in_db(db_session, "promoted", "promoted@example.com", "pass")
-        token = login_user(client, "super@example.com", "pass")
+    def test_admin_can_change_role(self, client, db_session):
+        create_user_in_db(db_session, "boss", "boss@test.com", "pass", role="admin")
+        target = create_user_in_db(db_session, "promoted", "promoted@test.com", "pass")
+        token = login_user(client, "boss@test.com", "pass")
 
         resp = client.patch(
             f"/api/users/{target.id}/role",
@@ -284,13 +502,12 @@ class TestAdminRolePermissions:
         assert resp.json()["role"] == "admin"
 
     def test_admin_can_demote_other_admin(self, client, db_session):
-        """Admin может понизить другого админа до user."""
-        create_user_in_db(db_session, "boss", "boss@example.com", "pass", role="admin")
-        other_admin = create_user_in_db(db_session, "admin2", "admin2@example.com", "pass", role="admin")
-        token = login_user(client, "boss@example.com", "pass")
+        create_user_in_db(db_session, "a1", "a1@test.com", "pass", role="admin")
+        other = create_user_in_db(db_session, "a2", "a2@test.com", "pass", role="admin")
+        token = login_user(client, "a1@test.com", "pass")
 
         resp = client.patch(
-            f"/api/users/{other_admin.id}/role",
+            f"/api/users/{other.id}/role",
             json={"role": "user"},
             headers=auth_header(token),
         )
@@ -298,9 +515,8 @@ class TestAdminRolePermissions:
         assert resp.json()["role"] == "user"
 
     def test_admin_cannot_demote_self(self, client, db_session):
-        """Admin не может снять роль admin с самого себя."""
-        admin = create_user_in_db(db_session, "selfadmin", "self@example.com", "pass", role="admin")
-        token = login_user(client, "self@example.com", "pass")
+        admin = create_user_in_db(db_session, "self", "self@test.com", "pass", role="admin")
+        token = login_user(client, "self@test.com", "pass")
 
         resp = client.patch(
             f"/api/users/{admin.id}/role",
@@ -310,27 +526,24 @@ class TestAdminRolePermissions:
         assert resp.status_code == 400
 
     def test_admin_can_delete_user(self, client, db_session):
-        """Admin может удалить пользователя."""
-        create_user_in_db(db_session, "deladmin", "deladmin@example.com", "pass", role="admin")
-        victim = create_user_in_db(db_session, "todelete", "todelete@example.com", "pass")
-        token = login_user(client, "deladmin@example.com", "pass")
+        create_user_in_db(db_session, "deladm", "deladm@test.com", "pass", role="admin")
+        victim = create_user_in_db(db_session, "todel", "todel@test.com", "pass")
+        token = login_user(client, "deladm@test.com", "pass")
 
         resp = client.delete(f"/api/users/{victim.id}", headers=auth_header(token))
         assert resp.status_code == 204
 
     def test_admin_cannot_delete_self(self, client, db_session):
-        """Admin не может удалить самого себя."""
-        admin = create_user_in_db(db_session, "nodelete", "nodelete@example.com", "pass", role="admin")
-        token = login_user(client, "nodelete@example.com", "pass")
+        admin = create_user_in_db(db_session, "nodel", "nodel@test.com", "pass", role="admin")
+        token = login_user(client, "nodel@test.com", "pass")
 
         resp = client.delete(f"/api/users/{admin.id}", headers=auth_header(token))
         assert resp.status_code == 400
 
-    def test_admin_change_to_invalid_role(self, client, db_session):
-        """Нельзя назначить несуществующую роль."""
-        create_user_in_db(db_session, "roleadmin", "roleadmin@example.com", "pass", role="admin")
-        target = create_user_in_db(db_session, "norole", "norole@example.com", "pass")
-        token = login_user(client, "roleadmin@example.com", "pass")
+    def test_admin_invalid_role(self, client, db_session):
+        create_user_in_db(db_session, "radm", "radm@test.com", "pass", role="admin")
+        target = create_user_in_db(db_session, "nr", "nr@test.com", "pass")
+        token = login_user(client, "radm@test.com", "pass")
 
         resp = client.patch(
             f"/api/users/{target.id}/role",
@@ -339,170 +552,9 @@ class TestAdminRolePermissions:
         )
         assert resp.status_code == 400
 
-
-# ══════════════════════════════════════════════════
-# 5.3 — НЕАВТОРИЗОВАННЫЕ ДЕЙСТВИЯ БЛОКИРУЮТСЯ
-# ══════════════════════════════════════════════════
-
-class TestUnauthorizedAccess:
-    """Проверяем, что без токена ничего не работает."""
-
-    def test_no_token_users_me(self, client):
-        """GET /api/users/me без токена — 401 или 403."""
-        resp = client.get("/api/users/me")
-        assert resp.status_code in (401, 403)
-
-    def test_no_token_users_list(self, client):
-        """GET /api/users/ без токена — 401 или 403."""
-        resp = client.get("/api/users/")
-        assert resp.status_code in (401, 403)
-
-    def test_no_token_media_list(self, client):
-        """GET /api/media/ без токена — 401 или 403."""
-        resp = client.get("/api/media/")
-        assert resp.status_code in (401, 403)
-
-    def test_no_token_media_upload(self, client):
-        """POST /api/media/upload без токена — 401 или 403."""
-        resp = client.post("/api/media/upload")
-        assert resp.status_code in (401, 403, 422)
-
-    def test_no_token_media_delete(self, client):
-        """DELETE /api/media/1 без токена — 401 или 403."""
-        resp = client.delete("/api/media/1")
-        assert resp.status_code in (401, 403)
-
-    def test_no_token_change_role(self, client):
-        """PATCH /api/users/1/role без токена — 401 или 403."""
-        resp = client.patch("/api/users/1/role", json={"role": "admin"})
-        assert resp.status_code in (401, 403)
-
-    def test_no_token_delete_user(self, client):
-        """DELETE /api/users/1 без токена — 401 или 403."""
-        resp = client.delete("/api/users/1")
-        assert resp.status_code in (401, 403)
-
-    def test_invalid_token(self, client):
-        """Невалидный токен — 401."""
-        resp = client.get(
-            "/api/users/me",
-            headers={"Authorization": "Bearer invalid.token.here"},
-        )
-        assert resp.status_code == 401
-
-    def test_expired_token_format(self, client):
-        """Произвольная строка вместо JWT — 401."""
-        resp = client.get(
-            "/api/users/me",
-            headers={"Authorization": "Bearer abc123"},
-        )
-        assert resp.status_code == 401
-
-
-class TestMediaAccessControl:
-    """Проверяем изоляцию медиа-файлов между пользователями."""
-
-    def test_user_sees_only_own_media(self, client, db_session):
-        """User видит только свои файлы в списке."""
-        create_user_in_db(db_session, "owner", "owner@example.com", "pass")
-        create_user_in_db(db_session, "other", "other@example.com", "pass")
-
-        token_owner = login_user(client, "owner@example.com", "pass")
-        token_other = login_user(client, "other@example.com", "pass")
-
-        # Owner загружает файл
-        file_content = b"fake image content"
-        resp = client.post(
-            "/api/media/upload",
-            headers=auth_header(token_owner),
-            files={"file": ("test.jpg", io.BytesIO(file_content), "image/jpeg")},
-        )
-        # Может быть 201 или ошибка MinIO (в тестах нет MinIO)
-        if resp.status_code not in (200, 201):
-            pytest.skip("MinIO not available in test environment")
-
-        media_id = resp.json()["id"]
-
-        # Other пытается получить чужой файл
-        resp2 = client.get(f"/api/media/{media_id}", headers=auth_header(token_other))
-        assert resp2.status_code == 403
-
-    def test_user_cannot_delete_other_media(self, client, db_session):
-        """User не может удалить чужой файл."""
-        create_user_in_db(db_session, "fileowner", "fileowner@example.com", "pass")
-        create_user_in_db(db_session, "stranger", "stranger@example.com", "pass")
-
-        token_owner = login_user(client, "fileowner@example.com", "pass")
-        token_stranger = login_user(client, "stranger@example.com", "pass")
-
-        # Owner загружает файл
-        resp = client.post(
-            "/api/media/upload",
-            headers=auth_header(token_owner),
-            files={"file": ("photo.png", io.BytesIO(b"png data"), "image/png")},
-        )
-        if resp.status_code not in (200, 201):
-            pytest.skip("MinIO not available in test environment")
-
-        media_id = resp.json()["id"]
-
-        # Stranger пытается удалить
-        resp2 = client.delete(f"/api/media/{media_id}", headers=auth_header(token_stranger))
-        assert resp2.status_code == 403
-
-    def test_admin_can_access_any_media(self, client, db_session):
-        """Admin может просматривать чужие файлы."""
-        create_user_in_db(db_session, "mediaowner", "mediaowner@example.com", "pass")
-        create_user_in_db(db_session, "mediaadmin", "mediaadmin@example.com", "pass", role="admin")
-
-        token_owner = login_user(client, "mediaowner@example.com", "pass")
-        token_admin = login_user(client, "mediaadmin@example.com", "pass")
-
-        # Owner загружает файл
-        resp = client.post(
-            "/api/media/upload",
-            headers=auth_header(token_owner),
-            files={"file": ("doc.jpg", io.BytesIO(b"jpg data"), "image/jpeg")},
-        )
-        if resp.status_code not in (200, 201):
-            pytest.skip("MinIO not available in test environment")
-
-        media_id = resp.json()["id"]
-
-        # Admin может его просмотреть
-        resp2 = client.get(f"/api/media/{media_id}", headers=auth_header(token_admin))
-        assert resp2.status_code == 200
-
-
-class TestRoleEscalationPrevention:
-    """Проверяем, что нельзя повысить себе права."""
-
-    def test_user_cannot_self_promote(self, client, db_session):
-        """User не может сам себе назначить роль admin."""
-        user = create_user_in_db(db_session, "sneaky", "sneaky@example.com", "pass")
-        token = login_user(client, "sneaky@example.com", "pass")
-
-        resp = client.patch(
-            f"/api/users/{user.id}/role",
-            json={"role": "admin"},
-            headers=auth_header(token),
-        )
-        assert resp.status_code == 403
-
-    def test_registered_user_is_always_user_role(self, client):
-        """Новый зарегистрированный пользователь всегда получает роль 'user'."""
-        resp = client.post("/api/auth/register", json={
-            "username": "newbie",
-            "email": "newbie@example.com",
-            "password": "pass123",
-        })
-        assert resp.status_code == 201
-        assert resp.json()["role"] == "user"
-
     def test_nonexistent_user_role_change(self, client, db_session):
-        """Смена роли несуществующего пользователя — 404."""
-        create_user_in_db(db_session, "realadmin", "realadmin@example.com", "pass", role="admin")
-        token = login_user(client, "realadmin@example.com", "pass")
+        create_user_in_db(db_session, "ra", "ra@test.com", "pass", role="admin")
+        token = login_user(client, "ra@test.com", "pass")
 
         resp = client.patch(
             "/api/users/99999/role",
@@ -510,3 +562,200 @@ class TestRoleEscalationPrevention:
             headers=auth_header(token),
         )
         assert resp.status_code == 404
+
+
+# ══════════════════════════════════════════════════
+# 7.1 — MVP СОХРАНЁН
+# ══════════════════════════════════════════════════
+
+class TestMVPPreserved:
+    """7.1 — существующая функциональность MVP сохранена."""
+
+    def test_register_works(self, client):
+        resp = client.post("/api/auth/register", json={
+            "username": "mvpuser",
+            "email": "mvp@test.com",
+            "password": "pass123",
+        })
+        assert resp.status_code == 201
+        assert resp.json()["username"] == "mvpuser"
+
+    def test_login_works(self, client, db_session):
+        create_user_in_db(db_session, "mvplogin", "mvplogin@test.com", "secret")
+
+        resp = client.post("/api/auth/login", json={
+            "email": "mvplogin@test.com",
+            "password": "secret",
+        })
+        assert resp.status_code == 200
+        assert "access_token" in resp.json()
+
+    def test_get_me_works(self, client, db_session):
+        create_user_in_db(db_session, "mvpme", "mvpme@test.com", "pass")
+        token = login_user(client, "mvpme@test.com", "pass")
+
+        resp = client.get("/api/users/me", headers=auth_header(token))
+        assert resp.status_code == 200
+        assert resp.json()["username"] == "mvpme"
+        assert resp.json()["role"] == "user"
+
+    def test_refresh_works(self, client, db_session):
+        create_user_in_db(db_session, "mvpref", "mvpref@test.com", "pass")
+        _, rt = login_full(client, "mvpref@test.com", "pass")
+
+        resp = client.post("/api/auth/refresh", json={"refresh_token": rt})
+        assert resp.status_code == 200
+        assert "access_token" in resp.json()
+
+    def test_media_endpoints_accessible(self, client, db_session):
+        """Список медиа доступен авторизованному пользователю (может быть пустым)."""
+        create_user_in_db(db_session, "mvpmedia", "mvpmedia@test.com", "pass")
+        token = login_user(client, "mvpmedia@test.com", "pass")
+
+        resp = client.get("/api/media/", headers=auth_header(token))
+        assert resp.status_code == 200
+        assert isinstance(resp.json(), list)
+
+
+# ══════════════════════════════════════════════════
+# 7.2 — СЕССИИ ПРЕДСКАЗУЕМЫ И БЕЗОПАСНЫ
+# ══════════════════════════════════════════════════
+
+class TestSessionSecurity:
+    """7.2 — сессии обрабатываются предсказуемо и безопасно."""
+
+    def test_refresh_token_not_accepted_as_access(self, client, db_session):
+        """RT не может использоваться вместо AT."""
+        create_user_in_db(db_session, "sec1", "sec1@test.com", "pass")
+        _, rt = login_full(client, "sec1@test.com", "pass")
+
+        resp = client.get("/api/users/me", headers=auth_header(rt))
+        assert resp.status_code == 401
+
+    def test_access_token_not_accepted_as_refresh(self, client, db_session):
+        """AT не может использоваться вместо RT."""
+        create_user_in_db(db_session, "sec2", "sec2@test.com", "pass")
+        at, _ = login_full(client, "sec2@test.com", "pass")
+
+        resp = client.post("/api/auth/refresh", json={"refresh_token": at})
+        assert resp.status_code == 401
+
+    def test_reuse_detection(self, client, db_session):
+        """Повторное использование отозванного RT → все сессии отозваны."""
+        create_user_in_db(db_session, "sec3", "sec3@test.com", "pass")
+        _, rt1 = login_full(client, "sec3@test.com", "pass")
+
+        # Ротация
+        resp1 = client.post("/api/auth/refresh", json={"refresh_token": rt1})
+        assert resp1.status_code == 200
+        rt2 = resp1.json()["refresh_token"]
+
+        # Reuse → все отзываются
+        resp2 = client.post("/api/auth/refresh", json={"refresh_token": rt1})
+        assert resp2.status_code == 401
+
+        resp3 = client.post("/api/auth/refresh", json={"refresh_token": rt2})
+        assert resp3.status_code == 401
+
+    def test_role_change_revokes_sessions(self, client, db_session):
+        """Смена роли отзывает все RT пользователя."""
+        create_user_in_db(db_session, "adm_rc", "adm_rc@test.com", "pass", role="admin")
+        target = create_user_in_db(db_session, "tgt_rc", "tgt_rc@test.com", "pass")
+        admin_token = login_user(client, "adm_rc@test.com", "pass")
+
+        _, target_rt = login_full(client, "tgt_rc@test.com", "pass")
+
+        # Admin меняет роль
+        client.patch(
+            f"/api/users/{target.id}/role",
+            json={"role": "admin"},
+            headers=auth_header(admin_token),
+        )
+
+        # RT пользователя отозван
+        resp = client.post("/api/auth/refresh", json={"refresh_token": target_rt})
+        assert resp.status_code == 401
+
+    def test_multiple_sessions_independent(self, client, db_session):
+        """Два логина создают независимые сессии."""
+        create_user_in_db(db_session, "ms", "ms@test.com", "pass")
+
+        at1, rt1 = login_full(client, "ms@test.com", "pass")
+        at2, rt2 = login_full(client, "ms@test.com", "pass")
+
+        # Оба AT работают
+        assert client.get("/api/users/me", headers=auth_header(at1)).status_code == 200
+        assert client.get("/api/users/me", headers=auth_header(at2)).status_code == 200
+
+        # Оба RT работают (но каждый одноразовый)
+        assert client.post("/api/auth/refresh", json={"refresh_token": rt1}).status_code == 200
+        assert client.post("/api/auth/refresh", json={"refresh_token": rt2}).status_code == 200
+
+
+# ══════════════════════════════════════════════════
+# 7.3 — ЕДИНЫЕ ПРАВИЛА ДОСТУПА
+# ══════════════════════════════════════════════════
+
+class TestUnifiedAccessRules:
+    """7.3 — клиентская и серверная части используют единые правила."""
+
+    def test_media_isolation_user_sees_own(self, client, db_session):
+        """User видит только свои файлы."""
+        create_user_in_db(db_session, "own", "own@test.com", "pass")
+        create_user_in_db(db_session, "oth", "oth@test.com", "pass")
+
+        token_own = login_user(client, "own@test.com", "pass")
+        token_oth = login_user(client, "oth@test.com", "pass")
+
+        resp = client.post(
+            "/api/media/upload",
+            headers=auth_header(token_own),
+            files={"file": ("test.jpg", io.BytesIO(b"data"), "image/jpeg")},
+        )
+        if resp.status_code not in (200, 201):
+            pytest.skip("MinIO not available")
+
+        media_id = resp.json()["id"]
+
+        resp2 = client.get(f"/api/media/{media_id}", headers=auth_header(token_oth))
+        assert resp2.status_code == 403
+
+    def test_media_isolation_user_cannot_delete_other(self, client, db_session):
+        """User не может удалить чужой файл."""
+        create_user_in_db(db_session, "fo", "fo@test.com", "pass")
+        create_user_in_db(db_session, "st", "st@test.com", "pass")
+
+        token_fo = login_user(client, "fo@test.com", "pass")
+        token_st = login_user(client, "st@test.com", "pass")
+
+        resp = client.post(
+            "/api/media/upload",
+            headers=auth_header(token_fo),
+            files={"file": ("p.png", io.BytesIO(b"png"), "image/png")},
+        )
+        if resp.status_code not in (200, 201):
+            pytest.skip("MinIO not available")
+
+        media_id = resp.json()["id"]
+        resp2 = client.delete(f"/api/media/{media_id}", headers=auth_header(token_st))
+        assert resp2.status_code == 403
+
+    def test_admin_can_access_any_media(self, client, db_session):
+        """Admin может просматривать чужие файлы."""
+        create_user_in_db(db_session, "mo", "mo@test.com", "pass")
+        create_user_in_db(db_session, "ma", "ma@test.com", "pass", role="admin")
+
+        token_mo = login_user(client, "mo@test.com", "pass")
+        token_ma = login_user(client, "ma@test.com", "pass")
+
+        resp = client.post(
+            "/api/media/upload",
+            headers=auth_header(token_mo),
+            files={"file": ("d.jpg", io.BytesIO(b"jpg"), "image/jpeg")},
+        )
+        if resp.status_code not in (200, 201):
+            pytest.skip("MinIO not available")
+
+        media_id = resp.json()["id"]
+        resp2 = client.get(f"/api/media/{media_id}", headers=auth_header(token_ma))
+        assert resp2.status_code == 200
