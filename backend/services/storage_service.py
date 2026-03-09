@@ -53,7 +53,7 @@ class StorageService:
         return self.client.get_object(self.bucket, object_name)
 
     def get_presigned_url(self, object_name: str, expires: int = 3600) -> str:
-        """URL для превью (если ты его используешь)."""
+        """Pre-signed URL для безопасного доступа к файлу."""
         return self.client.presigned_get_object(
             self.bucket,
             object_name,
@@ -69,3 +69,7 @@ class StorageService:
             obj.close()
             obj.release_conn()
         return data
+
+    def delete_object(self, object_name: str) -> None:
+        """Удалить объект из хранилища."""
+        self.client.remove_object(self.bucket, object_name)

@@ -1,8 +1,9 @@
 from pydantic import BaseModel, ConfigDict, EmailStr
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 
 
-# User schemas
+# ── User schemas ──
 class UserBase(BaseModel):
     username: str
     email: EmailStr
@@ -19,7 +20,7 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Auth / tokens
+# ── Auth / tokens ──
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
@@ -35,13 +36,18 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
-# Role management
+# ── Role management ──
 class ChangeRoleRequest(BaseModel):
     role: str  # "user" | "admin"
 
 
-# Media schemas
+# ── Media schemas ──
 class MediaCreate(BaseModel):
+    description: Optional[str] = None
+
+
+class MediaUpdate(BaseModel):
+    """Схема для PATCH /media/{id} — редактирование описания."""
     description: Optional[str] = None
 
 
@@ -49,8 +55,23 @@ class MediaResponse(BaseModel):
     id: int
     user_id: int
     original_url: str
-    processed_url: Optional[str]
+    original_filename: Optional[str] = None
+    processed_url: Optional[str] = None
     processed: bool
-    description: Optional[str]
+    description: Optional[str] = None
+    file_type: Optional[str] = None
+    file_size: Optional[int] = None
+    content_type: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PaginatedMediaResponse(BaseModel):
+    """Обёртка для постраничного вывода медиа-файлов."""
+    items: List[MediaResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int

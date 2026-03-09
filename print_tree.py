@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 ROOT_ARG = sys.argv[1] if len(sys.argv) > 1 else "."
 ROOT = Path(ROOT_ARG).resolve()
 
-# Загружаем .gitignore и добавляем node_modules в исключения
+# Загружаем .gitignore и добавляем node_modules и .git в исключения
 def load_gitignore(root: Path):
     gitignore = root / ".gitignore"
     patterns = []
@@ -25,8 +25,9 @@ def load_gitignore(root: Path):
             neg = line.startswith("!")
             pat = line[1:] if neg else line
             patterns.append((pat, neg))
-    # Добавляем node_modules независимо от .gitignore
+    # Добавляем node_modules и .git независимо от .gitignore
     patterns.append(("node_modules/", False))
+    patterns.append((".git/", False))
     return patterns
 
 def matches_pattern(rel: str, pattern: str):

@@ -32,9 +32,35 @@ export interface MediaResponse {
   id: number;
   user_id: number;
   original_url: string;
+  original_filename: string | null;
   processed_url: string | null;
   processed: boolean;
   description: string | null;
+  file_type: string | null;
+  file_size: number | null;
+  content_type: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PaginatedMediaResponse {
+  items: MediaResponse[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface MediaFilterParams {
+  search?: string;
+  processed?: boolean;
+  file_type?: string;
+  date_from?: string;
+  date_to?: string;
+  sort_by?: string;
+  sort_order?: string;
+  page?: number;
+  page_size?: number;
 }
 
 export interface ChangeRoleRequest {
@@ -67,9 +93,6 @@ export const tokenStorage = {
   },
 };
 
-// ── Callback для принудительного logout из любого места ──
-// App.tsx подписывается на это через api.onForceLogout = ...
-
 type LogoutCallback = () => void;
 
 // ── API Client с interceptor (5.3 + 5.5) ──
@@ -82,14 +105,11 @@ class ApiClient {
     reject: (err: Error) => void;
   }> = [];
 
-  // 5.5 — колбэк для принудительного logout при невалидной сессии
   public onForceLogout: LogoutCallback | null = null;
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
   }
-
-  // ── Основной метод запросов с auto-refresh interceptor ──
 
   private async request<T>(
     endpoint: string,
@@ -112,16 +132,13 @@ class ApiClient {
       headers,
     });
 
-    // 5.3 — Interceptor: если 401 и есть refresh token — пробуем обновить
     if (response.status === 401 && !skipAuth && retryCount === 0) {
       const refreshToken = tokenStorage.getRefreshToken();
       if (refreshToken) {
         try {
-          const newToken = await this.doRefresh();
-          // Повторяем исходный запрос с новым токеном
+          await this.doRefresh();
           return this.request<T>(endpoint, options, false, retryCount + 1);
         } catch {
-          // 5.5 — refresh не удался → полная очистка и редирект
           this.forceLogout();
           throw new Error('Session expired. Please login again.');
         }
@@ -143,10 +160,7 @@ class ApiClient {
     return response.json();
   }
 
-  // ── Refresh с очередью (если несколько запросов одновременно получили 401) ──
-
   private async doRefresh(): Promise<string> {
-    // Если уже идёт refresh — ждём его результат
     if (this.isRefreshing) {
       return new Promise<string>((resolve, reject) => {
         this.refreshQueue.push({ resolve, reject });
@@ -173,13 +187,11 @@ class ApiClient {
       tokenStorage.setToken(data.access_token);
       tokenStorage.setRefreshToken(data.refresh_token);
 
-      // Разблокируем очередь ожидающих запросов
       this.refreshQueue.forEach(({ resolve }) => resolve(data.access_token));
       this.refreshQueue = [];
 
       return data.access_token;
     } catch (err) {
-      // Все ожидающие запросы тоже получают ошибку
       this.refreshQueue.forEach(({ reject }) => reject(err as Error));
       this.refreshQueue = [];
       throw err;
@@ -188,7 +200,6 @@ class ApiClient {
     }
   }
 
-  // 5.5 — принудительный logout
   private forceLogout(): void {
     tokenStorage.clear();
     if (this.onForceLogout) {
@@ -204,26 +215,24 @@ class ApiClient {
     return this.request<User>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(userData),
-    }, true); // skipAuth — регистрация без токена
+    }, true);
   }
 
   async login(credentials: LoginRequest): Promise<TokenResponse> {
     const response = await this.request<TokenResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
-    }, true); // skipAuth — логин без токена
+    }, true);
 
     tokenStorage.setToken(response.access_token);
     tokenStorage.setRefreshToken(response.refresh_token);
 
-    // Кешируем профиль
     const user = await this.getCurrentUser();
     tokenStorage.setUser(user);
 
     return response;
   }
 
-  // 5.1 — серверный logout: отзываем refresh token на бэкенде
   async logout(): Promise<void> {
     const refreshToken = tokenStorage.getRefreshToken();
     if (refreshToken) {
@@ -233,7 +242,7 @@ class ApiClient {
           body: JSON.stringify({ refresh_token: refreshToken }),
         });
       } catch {
-        // Даже если бэкенд недоступен — очищаем локальное состояние
+        // fallback
       }
     }
     tokenStorage.clear();
@@ -257,11 +266,9 @@ class ApiClient {
       body: formData,
     });
 
-    // Interceptor для upload
     if (response.status === 401) {
       try {
         await this.doRefresh();
-        // Retry
         const newToken = tokenStorage.getToken();
         const retryResponse = await fetch(`${this.baseURL}/api/media/upload`, {
           method: 'POST',
@@ -287,12 +294,28 @@ class ApiClient {
     return response.json();
   }
 
-  async listMedia(): Promise<MediaResponse[]> {
-    return this.request<MediaResponse[]>('/api/media/');
+  async listMedia(params?: MediaFilterParams): Promise<PaginatedMediaResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null && value !== '') {
+          searchParams.set(key, String(value));
+        }
+      }
+    }
+    const query = searchParams.toString();
+    return this.request<PaginatedMediaResponse>(`/api/media/${query ? `?${query}` : ''}`);
   }
 
   async getMedia(mediaId: number): Promise<MediaResponse> {
     return this.request<MediaResponse>(`/api/media/${mediaId}`);
+  }
+
+  async updateMedia(mediaId: number, data: { description?: string }): Promise<MediaResponse> {
+    return this.request<MediaResponse>(`/api/media/${mediaId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   }
 
   async downloadMedia(mediaId: number): Promise<Blob> {
@@ -303,7 +326,6 @@ class ApiClient {
       headers: { 'Authorization': `Bearer ${token}` },
     });
 
-    // Interceptor для download
     if (response.status === 401) {
       try {
         await this.doRefresh();

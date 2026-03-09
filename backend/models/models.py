@@ -48,7 +48,13 @@ class MediaItem(Base):
     processed = Column(Boolean, default=False)
     processed_url = Column(String, nullable=True)
     description = Column(String, nullable=True)
-
     processed_object_name = Column(String, nullable=True)
+
+    # ── Новые поля для ЛР3: фильтрация, сортировка, метаданные ──
+    file_type = Column(String, nullable=True)       # "image" | "video"
+    file_size = Column(Integer, nullable=True)       # размер в байтах
+    content_type = Column(String, nullable=True)     # MIME-тип
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="media_items")
