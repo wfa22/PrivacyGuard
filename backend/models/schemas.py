@@ -38,7 +38,7 @@ class RefreshRequest(BaseModel):
 
 # ── Role management ──
 class ChangeRoleRequest(BaseModel):
-    role: str  # "user" | "admin"
+    role: str
 
 
 # ── Media schemas ──
@@ -47,7 +47,6 @@ class MediaCreate(BaseModel):
 
 
 class MediaUpdate(BaseModel):
-    """Схема для PATCH /media/{id} — редактирование описания."""
     description: Optional[str] = None
 
 
@@ -64,14 +63,27 @@ class MediaResponse(BaseModel):
     content_type: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # 5.1: Новое поле — статус удаления фона
+    bg_removed: Optional[bool] = False
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class PaginatedMediaResponse(BaseModel):
-    """Обёртка для постраничного вывода медиа-файлов."""
     items: List[MediaResponse]
     total: int
     page: int
     page_size: int
     pages: int
+
+
+# ══════════════════════════════════════════════════════════════════
+# 5.5. Нормализованный ответ для фронтенда о статусе Remove.bg
+# ══════════════════════════════════════════════════════════════════
+
+class RemoveBgStatusResponse(BaseModel):
+    """Статус сервиса Remove.bg."""
+    available: bool
+    credits_remaining: Optional[int] = None
+    rate_limit_per_minute: int
+    message: str

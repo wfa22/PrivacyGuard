@@ -52,6 +52,8 @@ class MediaService:
             content_type=item.content_type,
             created_at=item.created_at,
             updated_at=item.updated_at,
+            # ═══ ИСПРАВЛЕНИЕ: передаём bg_removed в ответ ═══
+            bg_removed=bool(item.bg_removed) if item.bg_removed is not None else False,
         )
 
     # ── Список (без фильтров — обратная совместимость) ──
@@ -78,31 +80,26 @@ class MediaService:
         page: int = 1,
         page_size: int = 10,
     ) -> PaginatedMediaResponse:
-        # Валидация sort_by
         if sort_by not in ALLOWED_SORT_FIELDS:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid sort_by. Allowed: {', '.join(sorted(ALLOWED_SORT_FIELDS))}",
             )
-        # Валидация sort_order
         if sort_order not in ALLOWED_SORT_ORDERS:
             raise HTTPException(
                 status_code=400,
                 detail="Invalid sort_order. Allowed: asc, desc",
             )
-        # Валидация file_type
         if file_type and file_type not in ALLOWED_FILE_TYPES:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid file_type. Allowed: {', '.join(sorted(ALLOWED_FILE_TYPES))}",
             )
-        # Валидация пагинации
         if page < 1:
             raise HTTPException(status_code=400, detail="page must be >= 1")
         if page_size < 1 or page_size > 100:
             raise HTTPException(status_code=400, detail="page_size must be 1..100")
 
-        # Обычный пользователь видит только свои файлы
         user_id = None if current_user.role == "admin" else current_user.id
 
         items, total = self.media_repo.get_filtered(
@@ -145,9 +142,6 @@ class MediaService:
         user_id: int,
         description: str = None,
     ) -> Tuple[MediaItem, MediaResponse]:
-        """Загрузка файла. Возвращает (item, response)."""
-
-        # Валидация MIME-типа
         if content_type not in ALLOWED_CONTENT_TYPES:
             raise HTTPException(
                 status_code=400,
@@ -155,7 +149,6 @@ class MediaService:
                        f"Allowed: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}",
             )
 
-        # Валидация размера
         if file_size > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=400,
@@ -163,7 +156,6 @@ class MediaService:
                        f"Maximum: {settings.MAX_FILE_SIZE_MB} MB",
             )
 
-        # Определяем категорию
         file_type_cat = "image" if content_type.startswith("image/") else "video"
 
         object_name = self.storage.upload_fileobj(file_obj, filename, user_id)
@@ -199,12 +191,11 @@ class MediaService:
 
         return self._build_response(item)
 
-    # ── Удаление (файлы из хранилища + запись из БД) ──
+    # ── Удаление ──
 
     def delete_media(self, media_id: int, current_user: User) -> None:
         item = self._get_and_check_access(media_id, current_user)
 
-        # Удаляем объекты из MinIO (ошибки хранилища не блокируют удаление)
         for obj_name in (item.original_object_name, item.processed_object_name):
             if obj_name:
                 try:
@@ -217,7 +208,6 @@ class MediaService:
     # ── Скачивание ──
 
     def get_download_info(self, media_id: int, current_user: User) -> tuple:
-        """Возвращает (file_stream, filename) для скачивания."""
         item = self._get_and_check_access(media_id, current_user)
 
         object_name = (

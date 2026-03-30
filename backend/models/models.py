@@ -50,11 +50,15 @@ class MediaItem(Base):
     description = Column(String, nullable=True)
     processed_object_name = Column(String, nullable=True)
 
-    # ── Новые поля для ЛР3: фильтрация, сортировка, метаданные ──
     file_type = Column(String, nullable=True)       # "image" | "video"
     file_size = Column(Integer, nullable=True)       # размер в байтах
     content_type = Column(String, nullable=True)     # MIME-тип
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # ══════════════════════════════════════════════════════════════
+    # 5.1. Новое поле: был ли применён Remove.bg
+    # ══════════════════════════════════════════════════════════════
+    bg_removed = Column(Boolean, default=False)
 
     user = relationship("User", back_populates="media_items")

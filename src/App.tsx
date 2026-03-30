@@ -1,34 +1,103 @@
-import React, { useState, useEffect } from 'react';
-import { HomePage } from './components/HomePage';
-import { AuthPage } from './components/AuthPage';
-import { CensoringPage } from './components/CensoringPage';
-import { DashboardPage } from './components/DashboardPage';
-import { AdminPage } from './components/AdminPage';
+import React, { useState, useEffect, Suspense } from 'react';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { Header } from './components/Header';
 import { tokenStorage, api, User } from './utils/api';
 
-type Page = 'home' | 'auth' | 'censoring' | 'dashboard' | 'admin';
+// ═══════════════════════════════════════════════════════════════
+// 4.1. LAZY LOADING тяжёлых компонентов
+// ═══════════════════════════════════════════════════════════════
+// WHY: Без lazy loading весь код (AdminPage, DashboardPage,
+// CensoringPage с motion/framer, recharts и т.д.) попадает
+// в один бандл ~300-500KB. С lazy — главная загружается за ~80KB,
+// остальное подгружается по требованию.
+//
+// HomePage НЕ lazy — это landing, критичен для First Contentful Paint.
+// Header НЕ lazy — виден на каждой странице.
+// ═══════════════════════════════════════════════════════════════
+
+import { HomePage } from './components/HomePage';
+
+const AuthPage = React.lazy(() =>
+  import('./components/AuthPage').then(m => ({ default: m.AuthPage }))
+);
+const CensoringPage = React.lazy(() =>
+  import('./components/CensoringPage').then(m => ({ default: m.CensoringPage }))
+);
+const DashboardPage = React.lazy(() =>
+  import('./components/DashboardPage').then(m => ({ default: m.DashboardPage }))
+);
+const AdminPage = React.lazy(() =>
+  import('./components/AdminPage').then(m => ({ default: m.AdminPage }))
+);
+
+// ═══════════════════════════════════════════════════════════════
+// 4.4. Стабильный loading fallback с фиксированными размерами
+// ═══════════════════════════════════════════════════════════════
+// WHY: Без фиксированного размера при загрузке chunk'а контент
+// "прыгает" (Layout Shift). min-h-screen гарантирует, что
+// placeholder занимает то же пространство, что и итоговый контент.
+// Это влияет на метрику CLS (Cumulative Layout Shift).
+// ═══════════════════════════════════════════════════════════════
+
+function PageLoader() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+function ProtectedRoute({
+  isLoggedIn,
+  isCheckingAuth,
+  children,
+}: {
+  isLoggedIn: boolean;
+  isCheckingAuth: boolean;
+  children: React.ReactNode;
+}) {
+  if (isCheckingAuth) return <PageLoader />;
+  if (!isLoggedIn) return <Navigate to="/auth" replace />;
+  return <>{children}</>;
+}
+
+function AdminRoute({
+  isLoggedIn,
+  isCheckingAuth,
+  user,
+  children,
+}: {
+  isLoggedIn: boolean;
+  isCheckingAuth: boolean;
+  user: User | null;
+  children: React.ReactNode;
+}) {
+  if (isCheckingAuth) return <PageLoader />;
+  if (!isLoggedIn) return <Navigate to="/auth" replace />;
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState<Page>('home');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  // 5.5 — подписываемся на принудительный logout из interceptor
+  const navigate = useNavigate();
+  const location = useLocation();
+
   useEffect(() => {
     api.onForceLogout = () => {
       setIsLoggedIn(false);
       setUser(null);
-      setCurrentPage('auth');
+      navigate('/auth', { replace: true });
     };
+    return () => { api.onForceLogout = null; };
+  }, [navigate]);
 
-    return () => {
-      api.onForceLogout = null;
-    };
-  }, []);
-
-  // 5.2 — восстановление состояния при загрузке
   useEffect(() => {
     const checkAuth = async () => {
       const token = tokenStorage.getToken();
@@ -38,7 +107,6 @@ export default function App() {
           setUser(currentUser);
           setIsLoggedIn(true);
         } catch {
-          // 5.5 — токен невалиден → очистка
           tokenStorage.clear();
           setIsLoggedIn(false);
           setUser(null);
@@ -46,7 +114,6 @@ export default function App() {
       }
       setIsCheckingAuth(false);
     };
-
     checkAuth();
   }, []);
 
@@ -56,7 +123,7 @@ export default function App() {
         const currentUser = await api.getCurrentUser();
         setUser(currentUser);
         setIsLoggedIn(true);
-        setCurrentPage('censoring');
+        navigate('/censoring');
       } catch {
         setIsLoggedIn(false);
         setUser(null);
@@ -64,74 +131,44 @@ export default function App() {
     }
   };
 
-  // 5.1 — серверный logout: отзываем refresh token на бэкенде
   const handleLogout = async () => {
     try {
-      await api.logout(); // POST /auth/logout + tokenStorage.clear()
+      await api.logout();
     } catch {
-      tokenStorage.clear(); // fallback
+      tokenStorage.clear();
     }
     setIsLoggedIn(false);
     setUser(null);
-    setCurrentPage('home');
+    navigate('/');
   };
 
   const handleGetStarted = () => {
-    if (isLoggedIn) {
-      setCurrentPage('censoring');
-    } else {
-      setCurrentPage('auth');
-    }
+    navigate(isLoggedIn ? '/censoring' : '/auth');
   };
 
-  // 5.4 — защита маршрутов по состоянию auth и ролям
-  const handleNavigate = (page: Page) => {
-    const protectedPages: Page[] = ['censoring', 'dashboard'];
-    const adminPages: Page[] = ['admin'];
-
-    if (protectedPages.includes(page) && !isLoggedIn) {
-      setCurrentPage('auth');
-      return;
-    }
-
-    if (adminPages.includes(page) && user?.role !== 'admin') {
-      setCurrentPage('home');
-      return;
-    }
-
-    setCurrentPage(page);
+  const handleNavigate = (page: string) => {
+    const routeMap: Record<string, string> = {
+      home: '/',
+      auth: '/auth',
+      censoring: '/censoring',
+      dashboard: '/dashboard',
+      admin: '/admin',
+    };
+    navigate(routeMap[page] || '/');
   };
 
-  if (isCheckingAuth) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'home':
-        return <HomePage onNavigate={handleNavigate} onGetStarted={handleGetStarted} />;
-      case 'auth':
-        return <AuthPage onNavigate={handleNavigate} onLogin={handleLogin} />;
-      case 'censoring':
-        return <CensoringPage onNavigate={handleNavigate} />;
-      case 'dashboard':
-        return <DashboardPage onNavigate={handleNavigate} user={user} />;
-      case 'admin':
-        if (user?.role !== 'admin') {
-          return <HomePage onNavigate={handleNavigate} onGetStarted={handleGetStarted} />;
-        }
-        return <AdminPage onNavigate={handleNavigate} currentUser={user} />;
-      default:
-        return <HomePage onNavigate={handleNavigate} onGetStarted={handleGetStarted} />;
+  const currentPage = (() => {
+    switch (location.pathname) {
+      case '/': return 'home';
+      case '/auth': return 'auth';
+      case '/censoring': return 'censoring';
+      case '/dashboard': return 'dashboard';
+      case '/admin': return 'admin';
+      default: return 'home';
     }
-  };
+  })();
+
+  if (isCheckingAuth) return <PageLoader />;
 
   return (
     <div className="min-h-screen bg-background">
@@ -142,7 +179,49 @@ export default function App() {
         user={user}
         onLogout={handleLogout}
       />
-      {renderPage()}
+
+      {/* 4.1: Suspense оборачивает lazy-компоненты */}
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route
+            path="/"
+            element={<HomePage onNavigate={handleNavigate} onGetStarted={handleGetStarted} />}
+          />
+          <Route
+            path="/auth"
+            element={
+              isLoggedIn
+                ? <Navigate to="/censoring" replace />
+                : <AuthPage onNavigate={handleNavigate} onLogin={handleLogin} />
+            }
+          />
+          <Route
+            path="/censoring"
+            element={
+              <ProtectedRoute isLoggedIn={isLoggedIn} isCheckingAuth={isCheckingAuth}>
+                <CensoringPage onNavigate={handleNavigate} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute isLoggedIn={isLoggedIn} isCheckingAuth={isCheckingAuth}>
+                <DashboardPage onNavigate={handleNavigate} user={user} />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute isLoggedIn={isLoggedIn} isCheckingAuth={isCheckingAuth} user={user}>
+                <AdminPage onNavigate={handleNavigate} currentUser={user} />
+              </AdminRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </div>
   );
 }

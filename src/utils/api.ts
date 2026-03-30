@@ -41,6 +41,8 @@ export interface MediaResponse {
   content_type: string | null;
   created_at: string | null;
   updated_at: string | null;
+  // 5.1: Новое поле
+  bg_removed: boolean | null;
 }
 
 export interface PaginatedMediaResponse {
@@ -67,7 +69,15 @@ export interface ChangeRoleRequest {
   role: string;
 }
 
-// ── Token Storage (5.2 — централизованное хранение) ──
+// 5.5: Нормализованный тип для статуса Remove.bg
+export interface RemoveBgStatus {
+  available: boolean;
+  credits_remaining: number | null;
+  rate_limit_per_minute: number;
+  message: string;
+}
+
+// ── Token Storage ──
 
 const TOKEN_KEY = 'privacyguard_access_token';
 const REFRESH_TOKEN_KEY = 'privacyguard_refresh_token';
@@ -95,7 +105,7 @@ export const tokenStorage = {
 
 type LogoutCallback = () => void;
 
-// ── API Client с interceptor (5.3 + 5.5) ──
+// ── API Client ──
 
 class ApiClient {
   private baseURL: string;
@@ -252,13 +262,19 @@ class ApiClient {
   // Media endpoints
   // ══════════════════════════════════════
 
-  async uploadMedia(file: File, description?: string): Promise<MediaResponse> {
+  // 5.2: Обновлённый upload с поддержкой remove_bg
+  async uploadMedia(
+    file: File,
+    description?: string,
+    removeBg: boolean = false,
+  ): Promise<MediaResponse> {
     const token = tokenStorage.getToken();
     if (!token) throw new Error('Not authenticated');
 
     const formData = new FormData();
     formData.append('file', file);
     if (description) formData.append('description', description);
+    formData.append('remove_bg', String(removeBg));
 
     const response = await fetch(`${this.baseURL}/api/media/upload`, {
       method: 'POST',
@@ -348,6 +364,14 @@ class ApiClient {
 
   async deleteMedia(mediaId: number): Promise<void> {
     return this.request<void>(`/api/media/${mediaId}`, { method: 'DELETE' });
+  }
+
+  // ══════════════════════════════════════
+  // 5.2: Remove.bg status endpoint
+  // ══════════════════════════════════════
+
+  async getRemoveBgStatus(): Promise<RemoveBgStatus> {
+    return this.request<RemoveBgStatus>('/api/media/removebg/status');
   }
 
   // ══════════════════════════════════════

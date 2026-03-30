@@ -1,15 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>PrivacyGuard project</title>
-    </head>
+    <!-- Базовый title (перезапишется React Helmet на каждой странице) -->
+    <title>PrivacyGuard — AI-Powered Privacy Protection for Images & Videos</title>
 
-    <body>
-      <div id="root"></div>
-      <script type="module" src="/src/main.tsx"></script>
-    </body>
-  </html>
-  
+    <!-- Базовый description (fallback, перезапишется динамически) -->
+    <meta name="description" content="Automatically blur faces and license plates in photos and videos with AI. GDPR-compliant privacy protection service." />
+
+    <!-- Canonical (базовый, перезапишется Helmet) -->
+    <link rel="canonical" href="https://privacyguard.com/" />
+
+    <!-- Open Graph (базовый fallback для краулеров, не исполняющих JS) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PrivacyGuard" />
+    <meta property="og:title" content="PrivacyGuard — AI-Powered Privacy Protection" />
+    <meta property="og:description" content="Automatically blur faces and license plates in photos and videos with AI." />
+    <meta property="og:image" content="https://privacyguard.com/og-image.png" />
+    <meta property="og:url" content="https://privacyguard.com/" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PrivacyGuard — AI-Powered Privacy Protection" />
+    <meta name="twitter:description" content="Automatically blur faces and license plates in photos and videos with AI." />
+    <meta name="twitter:image" content="https://privacyguard.com/og-image.png" />
+
+    <!-- Тема и favicon -->
+    <meta name="theme-color" content="#1e40af" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -28,6 +28,8 @@ def load_gitignore(root: Path):
     # Добавляем node_modules и .git независимо от .gitignore
     patterns.append(("node_modules/", False))
     patterns.append((".git/", False))
+    patterns.append(("backend/.pytest_cache/", False))
+    patterns.append(("src/components/ui/", False))
     return patterns
 
 def matches_pattern(rel: str, pattern: str):

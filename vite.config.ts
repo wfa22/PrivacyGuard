@@ -1,70 +1,126 @@
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
 
 export default defineConfig({
-    plugins: [react()],
-    resolve: {
-        extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
-        alias: {
-            'vaul@1.1.2': 'vaul',
-            'sonner@2.0.3': 'sonner',
-            'recharts@2.15.2': 'recharts',
-            'react-resizable-panels@2.1.7': 'react-resizable-panels',
-            'react-hook-form@7.55.0': 'react-hook-form',
-            'react-day-picker@8.10.1': 'react-day-picker',
-            'next-themes@0.4.6': 'next-themes',
-            'lucide-react@0.487.0': 'lucide-react',
-            'input-otp@1.4.2': 'input-otp',
-            'figma:asset/709588cac4b001de1885bc6f3067749a346e8958.png': path.resolve(__dirname, './src/assets/709588cac4b001de1885bc6f3067749a346e8958.png'),
-            'figma:asset/1c4e085c3e80dd157767a201559cf19c03d90b95.png': path.resolve(__dirname, './src/assets/1c4e085c3e80dd157767a201559cf19c03d90b95.png'),
-            'embla-carousel-react@8.6.0': 'embla-carousel-react',
-            'cmdk@1.1.1': 'cmdk',
-            'class-variance-authority@0.7.1': 'class-variance-authority',
-            '@radix-ui/react-tooltip@1.1.8': '@radix-ui/react-tooltip',
-            '@radix-ui/react-toggle@1.1.2': '@radix-ui/react-toggle',
-            '@radix-ui/react-toggle-group@1.1.2': '@radix-ui/react-toggle-group',
-            '@radix-ui/react-tabs@1.1.3': '@radix-ui/react-tabs',
-            '@radix-ui/react-switch@1.1.3': '@radix-ui/react-switch',
-            '@radix-ui/react-slot@1.1.2': '@radix-ui/react-slot',
-            '@radix-ui/react-slider@1.2.3': '@radix-ui/react-slider',
-            '@radix-ui/react-separator@1.1.2': '@radix-ui/react-separator',
-            '@radix-ui/react-select@2.1.6': '@radix-ui/react-select',
-            '@radix-ui/react-scroll-area@1.2.3': '@radix-ui/react-scroll-area',
-            '@radix-ui/react-radio-group@1.2.3': '@radix-ui/react-radio-group',
-            '@radix-ui/react-progress@1.1.2': '@radix-ui/react-progress',
-            '@radix-ui/react-popover@1.1.6': '@radix-ui/react-popover',
-            '@radix-ui/react-navigation-menu@1.2.5': '@radix-ui/react-navigation-menu',
-            '@radix-ui/react-menubar@1.1.6': '@radix-ui/react-menubar',
-            '@radix-ui/react-label@2.1.2': '@radix-ui/react-label',
-            '@radix-ui/react-hover-card@1.1.6': '@radix-ui/react-hover-card',
-            '@radix-ui/react-dropdown-menu@2.1.6': '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-dialog@1.1.6': '@radix-ui/react-dialog',
-            '@radix-ui/react-context-menu@2.2.6': '@radix-ui/react-context-menu',
-            '@radix-ui/react-collapsible@1.1.3': '@radix-ui/react-collapsible',
-            '@radix-ui/react-checkbox@1.1.4': '@radix-ui/react-checkbox',
-            '@radix-ui/react-avatar@1.1.3': '@radix-ui/react-avatar',
-            '@radix-ui/react-aspect-ratio@1.1.2': '@radix-ui/react-aspect-ratio',
-            '@radix-ui/react-alert-dialog@1.1.6': '@radix-ui/react-alert-dialog',
-            '@radix-ui/react-accordion@1.2.3': '@radix-ui/react-accordion',
-            '@jsr/supabase__supabase-js@2.49.8': '@jsr/supabase__supabase-js',
-            '@': path.resolve(__dirname, './src'),
+  plugins: [react()],
+  resolve: {
+    extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
+    alias: {
+      'vaul@1.1.2': 'vaul',
+      'sonner@2.0.3': 'sonner',
+      'recharts@2.15.2': 'recharts',
+      'react-resizable-panels@2.1.7': 'react-resizable-panels',
+      'react-hook-form@7.55.0': 'react-hook-form',
+      'react-day-picker@8.10.1': 'react-day-picker',
+      'next-themes@0.4.6': 'next-themes',
+      'lucide-react@0.487.0': 'lucide-react',
+      'input-otp@1.4.2': 'input-otp',
+      'figma:asset/709588cac4b001de1885bc6f3067749a346e8958.png': path.resolve(__dirname, './src/assets/709588cac4b001de1885bc6f3067749a346e8958.png'),
+      'figma:asset/1c4e085c3e80dd157767a201559cf19c03d90b95.png': path.resolve(__dirname, './src/assets/1c4e085c3e80dd157767a201559cf19c03d90b95.png'),
+      'embla-carousel-react@8.6.0': 'embla-carousel-react',
+      'cmdk@1.1.1': 'cmdk',
+      'class-variance-authority@0.7.1': 'class-variance-authority',
+      '@radix-ui/react-tooltip@1.1.8': '@radix-ui/react-tooltip',
+      '@radix-ui/react-toggle@1.1.2': '@radix-ui/react-toggle',
+      '@radix-ui/react-toggle-group@1.1.2': '@radix-ui/react-toggle-group',
+      '@radix-ui/react-tabs@1.1.3': '@radix-ui/react-tabs',
+      '@radix-ui/react-switch@1.1.3': '@radix-ui/react-switch',
+      '@radix-ui/react-slot@1.1.2': '@radix-ui/react-slot',
+      '@radix-ui/react-slider@1.2.3': '@radix-ui/react-slider',
+      '@radix-ui/react-separator@1.1.2': '@radix-ui/react-separator',
+      '@radix-ui/react-select@2.1.6': '@radix-ui/react-select',
+      '@radix-ui/react-scroll-area@1.2.3': '@radix-ui/react-scroll-area',
+      '@radix-ui/react-radio-group@1.2.3': '@radix-ui/react-radio-group',
+      '@radix-ui/react-progress@1.1.2': '@radix-ui/react-progress',
+      '@radix-ui/react-popover@1.1.6': '@radix-ui/react-popover',
+      '@radix-ui/react-navigation-menu@1.2.5': '@radix-ui/react-navigation-menu',
+      '@radix-ui/react-menubar@1.1.6': '@radix-ui/react-menubar',
+      '@radix-ui/react-label@2.1.2': '@radix-ui/react-label',
+      '@radix-ui/react-hover-card@1.1.6': '@radix-ui/react-hover-card',
+      '@radix-ui/react-dropdown-menu@2.1.6': '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-dialog@1.1.6': '@radix-ui/react-dialog',
+      '@radix-ui/react-context-menu@2.2.6': '@radix-ui/react-context-menu',
+      '@radix-ui/react-collapsible@1.1.3': '@radix-ui/react-collapsible',
+      '@radix-ui/react-checkbox@1.1.4': '@radix-ui/react-checkbox',
+      '@radix-ui/react-avatar@1.1.3': '@radix-ui/react-avatar',
+      '@radix-ui/react-aspect-ratio@1.1.2': '@radix-ui/react-aspect-ratio',
+      '@radix-ui/react-alert-dialog@1.1.6': '@radix-ui/react-alert-dialog',
+      '@radix-ui/react-accordion@1.2.3': '@radix-ui/react-accordion',
+      '@jsr/supabase__supabase-js@2.49.8': '@jsr/supabase__supabase-js',
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  build: {
+    target: 'esnext',
+    outDir: 'build',
+
+    // ══════════════════════════════════════════════════════════════
+    // 4.3. ОПТИМИЗАЦИЯ РАЗМЕРА БАНДЛА
+    // ══════════════════════════════════════════════════════════════
+    // WHY: Один большой JS-файл = долгая загрузка + блокировка рендера.
+    // Code splitting по маршрутам (React.lazy) создаёт отдельные чанки.
+    // rollupOptions дополнительно разделяет vendor-библиотеки.
+    //
+    // Результат:
+    // - index.js: ~50KB (React + router + app shell)
+    // - vendor-radix.js: ~80KB (UI компоненты, загружается параллельно)
+    // - vendor-motion.js: ~40KB (анимации, только для CensoringPage)
+    // - AuthPage.js, DashboardPage.js, etc.: ~10-30KB каждый (lazy)
+    //
+    // cssCodeSplit: true → CSS каждого чанка загружается отдельно
+    // ══════════════════════════════════════════════════════════════
+    cssCodeSplit: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core — кэшируется надолго, меняется редко
+          'vendor-react': ['react', 'react-dom'],
+
+          // Router — отдельный чанк
+          'vendor-router': ['react-router-dom'],
+
+          // UI библиотеки (Radix) — большой блок, но меняется редко
+          'vendor-radix': [
+            '@radix-ui/react-dialog',
+            '@radix-ui/react-select',
+            '@radix-ui/react-checkbox',
+            '@radix-ui/react-progress',
+            '@radix-ui/react-separator',
+            '@radix-ui/react-label',
+            '@radix-ui/react-alert-dialog',
+          ],
+
+          // Анимации — только CensoringPage их использует
+          'vendor-motion': ['motion'],
+
+          // Иконки — tree-shaking работает, но чанк помогает кэшированию
+          'vendor-icons': ['lucide-react'],
         },
+      },
     },
-    build: {
-        target: 'esnext',
-        outDir: 'build',
+
+    // Предупреждение если чанк > 500KB (дефолт 500KB)
+    chunkSizeWarningLimit: 500,
+  },
+  server: {
+    host: '0.0.0.0',
+    port: 3000,
+    open: true,
+    proxy: {
+      '/api': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+        rewrite: (path) => path,
+      },
+      '/robots.txt': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+      },
+      '/sitemap.xml': {
+        target: 'http://backend:8000',
+        changeOrigin: true,
+      },
     },
-    server: {
-        host: '0.0.0.0',
-        port: 3000,
-        open: true,
-        proxy: {
-            '/api': {
-                target: 'http://backend:8000',
-                changeOrigin: true,
-                rewrite: (path) => path,
-            },
-        },
-    },
+  },
 });
