@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+npm-debug.log
+dist
+build
+.vite
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+
+# Env / secrets
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests artifacts
+coverage
+htmlcov
+.pytest_cache
+test-results
+playwright-report
+
+# Runtime / temp
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Local DB / storage
+*.db
+*.sqlite3
+backend/app.db

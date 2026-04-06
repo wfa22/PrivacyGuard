@@ -1,5 +1,4 @@
-# frontend.Dockerfile
-FROM node:18-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -8,5 +7,13 @@ RUN npm install
 
 COPY . .
 
-# Запускаем Vite на 0.0.0.0
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
+RUN npm run build
+
+FROM nginx:stable-alpine
+
+COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/build /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

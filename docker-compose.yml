@@ -1,7 +1,4 @@
-version: "3.9"
-
 services:
-  # === 🧠 BACKEND (FastAPI) ===
   backend:
     build:
       context: ./backend
@@ -10,37 +7,58 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
-      - minio
+      minio:
+        condition: service_started
     volumes:
       - ./backend:/app
     networks:
       - privacyguard_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
-  # === 🎨 FRONTEND (React) ===
   frontend:
     build:
       context: .
       dockerfile: frontend.Dockerfile
     container_name: privacyguard_frontend
     restart: unless-stopped
-    ports:
-      - "3000:3000"
-    stdin_open: true
-    tty: true
-    environment:
-      - CHOKIDAR_USEPOLLING=true
-      - VITE_API_URL=http://localhost:8000
+    expose:
+      - "80"
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - privacyguard_net
-    depends_on:
-      - backend
-    env_file:
-      - .env
 
-  # === 💾 MINIO ===
+  nginx:
+    image: nginx:stable-alpine
+    container_name: privacyguard_nginx
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - privacyguard_net
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   minio:
     image: quay.io/minio/minio:latest
     container_name: privacyguard_minio
@@ -56,6 +74,12 @@ services:
       - minio_data:/data
     networks:
       - privacyguard_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   minio_data:
