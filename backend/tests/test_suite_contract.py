@@ -1,15 +1,3 @@
-"""
-Контрольный regression/smoke-набор для итоговой проверки лабораторной.
-
-Назначение:
-- подтвердить, что ключевые сценарии приложения работают;
-- подтвердить, что ограничения безопасности соблюдаются;
-- дать короткий, понятный набор проверок для финального прогона.
-
-Этот файл НЕ заменяет остальные тесты.
-Он агрегирует самые критичные проверки по пунктам 7.1 и 7.2.
-"""
-
 import pytest
 
 from tests.conftest import (
@@ -95,6 +83,7 @@ class TestSecurityRestrictions:
 
     def test_user_cannot_access_foreign_media(self, client, db_session):
         owner = create_user_in_db(db_session, "owner", "owner@test.com", "pass")
+        create_user_in_db(db_session, "intruder", "intruder@test.com", "pass")
         item = create_media_in_db(db_session, owner.id, original_filename="secret.jpg")
 
         token = login_user(client, "intruder@test.com", "pass")

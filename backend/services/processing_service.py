@@ -20,13 +20,14 @@ try:
 except ImportError:
     YOLO_AVAILABLE = False
 
+try:
+    import cv2
+
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
-
-storage = StorageService()
-removebg_service = RemoveBgService()
-
-print(f"[PROCESS] YOLO_AVAILABLE={YOLO_AVAILABLE}")
-print(f"[PROCESS] RemoveBg_AVAILABLE={removebg_service.is_available()}")
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mpeg"}
@@ -36,12 +37,32 @@ _PLATE_MODEL_PATH = "/app/models/yolo_plate.pt"
 
 _face_model = None
 _plate_model = None
+_models_initialized = False
 
 MIN_PROCESSING_SECONDS = 1.0
 
 
+def get_storage_service() -> StorageService:
+    return StorageService()
+
+
+def get_removebg_service() -> RemoveBgService:
+    return RemoveBgService()
+
+
 def _init_models():
-    global _face_model, _plate_model
+    global _face_model, _plate_model, _models_initialized
+
+    if _models_initialized:
+        return
+
+    _models_initialized = True
+
+    print(f"[PROCESS] YOLO_AVAILABLE={YOLO_AVAILABLE}")
+    print(f"[PROCESS] CV2_AVAILABLE={CV2_AVAILABLE}")
+
+    removebg_service = get_removebg_service()
+    print(f"[PROCESS] RemoveBg_AVAILABLE={removebg_service.is_available()}")
 
     if not YOLO_AVAILABLE:
         print("[PROCESS] YOLO not available, skipping model load")
@@ -60,10 +81,9 @@ def _init_models():
         print(f"[PROCESS] Plate model NOT FOUND: {_PLATE_MODEL_PATH}")
 
 
-_init_models()
-
-
 def _detect_boxes(image: np.ndarray) -> List[Tuple[int, int, int, int]]:
+    _init_models()
+
     boxes: List[Tuple[int, int, int, int]] = []
 
     if not YOLO_AVAILABLE:
@@ -91,14 +111,6 @@ def _detect_boxes(image: np.ndarray) -> List[Tuple[int, int, int, int]]:
     run_model(_plate_model)
 
     return boxes
-
-
-try:
-    import cv2
-
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
 
 
 def _blur_boxes(
@@ -138,26 +150,9 @@ def process_image_bytes(data: bytes) -> bytes:
     return buf.getvalue()
 
 
-# ══════════════════════════════════════════════════════════════════
-# 5.2. Интеграция Remove.bg в pipeline обработки
-# ══════════════════════════════════════════════════════════════════
-# WHY: Remove.bg вызывается ПОСЛЕ YOLO-блюра, чтобы:
-# 1. Лица/номера уже размыты → на Remove.bg уходит безопасное изображение
-# 2. Если Remove.bg упадёт — пользователь всё равно получит заблюренный результат
-# 3. Graceful degradation: ошибка Remove.bg НЕ ломает основной pipeline
-# ══════════════════════════════════════════════════════════════════
-
-
 def _apply_remove_bg(image_data: bytes) -> Tuple[bytes, bool]:
-    """
-    Пытается удалить фон через Remove.bg API.
+    removebg_service = get_removebg_service()
 
-    Returns:
-        (result_bytes, bg_was_removed)
-
-    Никогда не бросает исключения — при ошибке возвращает
-    исходные данные с bg_was_removed=False.
-    """
     if not removebg_service.is_available():
         logger.info("[PROCESS] Remove.bg not available, skipping")
         return image_data, False
@@ -172,12 +167,12 @@ def _apply_remove_bg(image_data: bytes) -> Tuple[bytes, bool]:
                 f"Credits remaining: {result.credits_remaining}"
             )
             return result.image_data, True
-        else:
-            logger.warning(
-                f"[PROCESS] Remove.bg returned error: {result.error_message}. "
-                f"Using original image."
-            )
-            return image_data, False
+
+        logger.warning(
+            f"[PROCESS] Remove.bg returned error: {result.error_message}. "
+            f"Using original image."
+        )
+        return image_data, False
 
     except RemoveBgError as e:
         logger.warning(f"[PROCESS] Remove.bg error: {e}. Using original image.")
@@ -198,16 +193,11 @@ def _guess_media_type(filename: str) -> str:
 
 
 def process_media_item(media_id: int, remove_bg: bool = False):
-    """
-    Обрабатывает медиа-файл: YOLO blur + опционально Remove.bg.
-
-    Args:
-        media_id: ID записи в БД
-        remove_bg: Нужно ли удалять фон (передаётся с фронтенда)
-    """
     started_at = time.time()
 
     db = SessionLocal()
+    storage = get_storage_service()
+
     try:
         item: mdl.MediaItem | None = (
             db.query(mdl.MediaItem).filter(mdl.MediaItem.id == media_id).first()
@@ -222,17 +212,13 @@ def process_media_item(media_id: int, remove_bg: bool = False):
         bg_was_removed = False
 
         if media_type == "image":
-            # Шаг 1: YOLO blur (лица + номера)
             processed_data = process_image_bytes(original_data)
 
-            # Шаг 2: Remove.bg (опционально)
             if remove_bg:
                 processed_data, bg_was_removed = _apply_remove_bg(processed_data)
 
-            # Если Remove.bg вернул PNG, сохраняем как PNG
             output_filename = item.original_filename
             if bg_was_removed and not output_filename.lower().endswith(".png"):
-                # Меняем расширение на .png (т.к. фон прозрачный)
                 base = os.path.splitext(output_filename)[0]
                 output_filename = f"{base}.png"
 
@@ -242,7 +228,6 @@ def process_media_item(media_id: int, remove_bg: bool = False):
                 user_id=item.user_id,
             )
         else:
-            # Видео — пока без Remove.bg
             processed_object_name = storage.upload_bytes(
                 original_data,
                 filename=item.original_filename,

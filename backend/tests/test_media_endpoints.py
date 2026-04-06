@@ -90,6 +90,7 @@ class TestMediaEndpoints:
     @pytest.mark.security
     def test_user_cannot_access_other_media(self, client, db_session, monkeypatch):
         owner = create_user_in_db(db_session, "owner", "owner@test.com", "pass")
+        create_user_in_db(db_session, "other", "other@test.com", "pass")
         item = create_media_in_db(db_session, owner.id, original_filename="img.jpg")
         token = login_user(client, "other@test.com", "pass")
 
@@ -109,6 +110,9 @@ class TestMediaEndpoints:
     @pytest.mark.security
     def test_admin_can_access_any_media(self, client, db_session, monkeypatch):
         owner = create_user_in_db(db_session, "owner", "owner@test.com", "pass")
+        create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
         item = create_media_in_db(db_session, owner.id, original_filename="img.jpg")
         token = login_user(client, "admin@test.com", "pass")
 
@@ -183,8 +187,8 @@ class TestMediaEndpoints:
         token = login_user(client, "u1@test.com", "pass")
 
         class FakeStream(io.BytesIO):
-            def close(self):
-                super().close()
+            def release_conn(self):
+                pass
 
         class FakeStorage:
             def get_file_stream(self, object_name):

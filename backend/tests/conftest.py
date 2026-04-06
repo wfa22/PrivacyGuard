@@ -1,20 +1,28 @@
+import io
 import os
 import sys
-import pytest
-
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
-from main import app
-from core.database import Base, get_db
-from models.models import User, MediaItem
-from services.auth_service import hash_password
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 os.environ["DATABASE_URL"] = "sqlite://"
+os.environ.setdefault("MINIO_ENDPOINT", "localhost:9000")
+os.environ.setdefault("MINIO_ACCESS_KEY", "test")
+os.environ.setdefault("MINIO_SECRET_KEY", "testsecret")
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import create_engine, event  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
+
+from main import app  # noqa: E402
+from core.database import Base, get_db  # noqa: E402
+from models.models import User, MediaItem  # noqa: E402
+from repositories.media_repository import MediaRepository  # noqa: E402
+from routers.media import get_media_service  # noqa: E402
+from services.auth_service import hash_password  # noqa: E402
+from services.media_service import MediaService  # noqa: E402
+
 
 engine = create_engine(
     "sqlite://",
@@ -45,18 +53,38 @@ def override_get_db():
         db.close()
 
 
-@pytest.fixture(autouse=True)
-def setup_database():
-    app.dependency_overrides[get_db] = override_get_db
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
-    app.dependency_overrides.clear()
+class FakeFile(io.BytesIO):
+    def __init__(self, data=b"fake-bytes"):
+        super().__init__(data)
+
+    def release_conn(self):
+        pass
 
 
-@pytest.fixture
-def client():
-    return TestClient(app)
+class FakeStorage:
+    def __init__(self):
+        self.deleted = []
+        self.uploaded = []
+
+    def upload_fileobj(self, file_obj, filename, user_id):
+        self.uploaded.append((filename, user_id))
+        return f"{user_id}/original/{filename}"
+
+    def upload_bytes(self, data, filename, user_id):
+        self.uploaded.append((filename, user_id))
+        return f"{user_id}/processed/{filename}"
+
+    def get_presigned_url(self, object_name, expires=3600):
+        return f"http://test.local/{object_name}?expires={expires}"
+
+    def get_file_stream(self, object_name):
+        return FakeFile(b"download-data")
+
+    def download_bytes(self, object_name):
+        return b"source-image-bytes"
+
+    def delete_object(self, object_name):
+        self.deleted.append(object_name)
 
 
 @pytest.fixture
@@ -70,48 +98,35 @@ def db_session():
 
 @pytest.fixture
 def fake_storage(monkeypatch):
-    class FakeFile:
-        def __init__(self, data=b"fake-bytes"):
-            self._data = data
-            self.closed = False
-
-        def read(self):
-            return self._data
-
-        def close(self):
-            self.closed = True
-
-        def release_conn(self):
-            pass
-
-    class FakeStorage:
-        def __init__(self):
-            self.deleted = []
-            self.uploaded = []
-
-        def upload_fileobj(self, file_obj, filename, user_id):
-            self.uploaded.append((filename, user_id))
-            return f"{user_id}/original/{filename}"
-
-        def upload_bytes(self, data, filename, user_id):
-            self.uploaded.append((filename, user_id))
-            return f"{user_id}/processed/{filename}"
-
-        def get_presigned_url(self, object_name, expires=3600):
-            return f"http://test.local/{object_name}?expires={expires}"
-
-        def get_file_stream(self, object_name):
-            return FakeFile(b"download-data")
-
-        def download_bytes(self, object_name):
-            return b"source-image-bytes"
-
-        def delete_object(self, object_name):
-            self.deleted.append(object_name)
-
     storage = FakeStorage()
-    monkeypatch.setattr("services.media_service.StorageService", lambda: storage)
+
+    def override_media_service():
+        db = TestingSessionLocal()
+        media_repo = MediaRepository(db)
+        return MediaService(storage=storage, media_repo=media_repo)
+
+    app.dependency_overrides[get_media_service] = override_media_service
+
+    monkeypatch.setattr(
+        "services.processing_service.get_storage_service",
+        lambda: storage,
+    )
+
     return storage
+
+
+@pytest.fixture(autouse=True)
+def setup_database(fake_storage):
+    app.dependency_overrides[get_db] = override_get_db
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
 
 
 @pytest.fixture
@@ -139,15 +154,15 @@ def create_user_in_db(db, username, email, password, role="user"):
 
 
 def create_media_in_db(
-        db,
-        user_id: int,
-        original_filename: str = "file.jpg",
-        processed: bool = False,
-        file_type: str = "image",
-        file_size: int = 1234,
-        content_type: str = "image/jpeg",
-        description: str | None = None,
-        bg_removed: bool = False,
+    db,
+    user_id: int,
+    original_filename: str = "file.jpg",
+    processed: bool = False,
+    file_type: str = "image",
+    file_size: int = 1234,
+    content_type: str = "image/jpeg",
+    description: str | None = None,
+    bg_removed: bool = False,
 ):
     item = MediaItem(
         user_id=user_id,

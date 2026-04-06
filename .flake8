@@ -8,3 +8,5 @@ exclude =
     node_modules,
     build,
     dist
+per-file-ignores =
+    backend/tests/conftest.py:E402
