@@ -14,8 +14,13 @@ from services.storage_service import StorageService
 MAX_FILE_SIZE = settings.MAX_FILE_SIZE_MB * 1024 * 1024
 
 ALLOWED_CONTENT_TYPES = {
-    "image/jpeg", "image/png", "image/webp", "image/gif",
-    "video/mp4", "video/mpeg", "video/quicktime",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "video/mp4",
+    "video/mpeg",
+    "video/quicktime",
 }
 
 ALLOWED_SORT_FIELDS = {"created_at", "original_filename", "file_size", "id"}
@@ -146,14 +151,14 @@ class MediaService:
             raise HTTPException(
                 status_code=400,
                 detail=f"Unsupported file type: {content_type}. "
-                       f"Allowed: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}",
+                f"Allowed: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}",
             )
 
         if file_size > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=400,
                 detail=f"File too large ({file_size} bytes). "
-                       f"Maximum: {settings.MAX_FILE_SIZE_MB} MB",
+                f"Maximum: {settings.MAX_FILE_SIZE_MB} MB",
             )
 
         file_type_cat = "image" if content_type.startswith("image/") else "video"

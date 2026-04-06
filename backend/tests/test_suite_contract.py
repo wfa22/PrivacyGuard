@@ -24,17 +24,23 @@ from tests.conftest import (
 @pytest.mark.integration
 class TestCriticalScenarios:
     def test_register_login_get_me_flow_works(self, client):
-        register_resp = client.post("/api/auth/register", json={
-            "username": "finaluser",
-            "email": "finaluser@test.com",
-            "password": "pass123",
-        })
+        register_resp = client.post(
+            "/api/auth/register",
+            json={
+                "username": "finaluser",
+                "email": "finaluser@test.com",
+                "password": "pass123",
+            },
+        )
         assert register_resp.status_code == 201
 
-        login_resp = client.post("/api/auth/login", json={
-            "email": "finaluser@test.com",
-            "password": "pass123",
-        })
+        login_resp = client.post(
+            "/api/auth/login",
+            json={
+                "email": "finaluser@test.com",
+                "password": "pass123",
+            },
+        )
         assert login_resp.status_code == 200
 
         access_token = login_resp.json()["access_token"]
@@ -43,7 +49,9 @@ class TestCriticalScenarios:
         assert me_resp.status_code == 200
         assert me_resp.json()["email"] == "finaluser@test.com"
 
-    def test_media_list_endpoint_available_for_authorized_user(self, client, db_session):
+    def test_media_list_endpoint_available_for_authorized_user(
+        self, client, db_session
+    ):
         create_user_in_db(db_session, "mediauser", "mediauser@test.com", "pass")
         token = login_user(client, "mediauser@test.com", "pass")
 
@@ -87,7 +95,6 @@ class TestSecurityRestrictions:
 
     def test_user_cannot_access_foreign_media(self, client, db_session):
         owner = create_user_in_db(db_session, "owner", "owner@test.com", "pass")
-        intruder = create_user_in_db(db_session, "intruder", "intruder@test.com", "pass")
         item = create_media_in_db(db_session, owner.id, original_filename="secret.jpg")
 
         token = login_user(client, "intruder@test.com", "pass")
@@ -95,7 +102,9 @@ class TestSecurityRestrictions:
 
         assert resp.status_code == 403
 
-    def test_refresh_token_reuse_detection_still_protects_sessions(self, client, db_session):
+    def test_refresh_token_reuse_detection_still_protects_sessions(
+        self, client, db_session
+    ):
         create_user_in_db(db_session, "reuse", "reuse@test.com", "pass")
 
         _, rt1 = login_full(client, "reuse@test.com", "pass")

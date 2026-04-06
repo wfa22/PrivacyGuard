@@ -23,9 +23,8 @@ class TokenRepository:
             user_id=user_id,
             token_hash=token_hash,
             device_info=device_info,
-            expires_at=datetime.utcnow() + timedelta(
-                days=settings.REFRESH_TOKEN_EXPIRE_DAYS
-            ),
+            expires_at=datetime.utcnow()
+            + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
         )
         self.db.add(stored)
         self.db.commit()

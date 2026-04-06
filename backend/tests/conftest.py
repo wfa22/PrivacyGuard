@@ -1,11 +1,6 @@
 import os
 import sys
-import io
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-os.environ["DATABASE_URL"] = "sqlite://"
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
@@ -17,6 +12,9 @@ from core.database import Base, get_db
 from models.models import User, MediaItem
 from services.auth_service import hash_password
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+os.environ["DATABASE_URL"] = "sqlite://"
 
 engine = create_engine(
     "sqlite://",
@@ -141,15 +139,15 @@ def create_user_in_db(db, username, email, password, role="user"):
 
 
 def create_media_in_db(
-    db,
-    user_id: int,
-    original_filename: str = "file.jpg",
-    processed: bool = False,
-    file_type: str = "image",
-    file_size: int = 1234,
-    content_type: str = "image/jpeg",
-    description: str | None = None,
-    bg_removed: bool = False,
+        db,
+        user_id: int,
+        original_filename: str = "file.jpg",
+        processed: bool = False,
+        file_type: str = "image",
+        file_size: int = 1234,
+        content_type: str = "image/jpeg",
+        description: str | None = None,
+        bg_removed: bool = False,
 ):
     item = MediaItem(
         user_id=user_id,

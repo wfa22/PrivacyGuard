@@ -23,7 +23,9 @@ class UserRepository:
     def get_all(self) -> List[User]:
         return self.db.query(User).all()
 
-    def create(self, username: str, email: str, password_hash: str, role: str = "user") -> User:
+    def create(
+        self, username: str, email: str, password_hash: str, role: str = "user"
+    ) -> User:
         user = User(
             username=username,
             email=email,

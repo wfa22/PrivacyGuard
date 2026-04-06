@@ -48,8 +48,12 @@ class TestUserService:
 
     @pytest.mark.security
     def test_change_role_updates_role(self, db_session):
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
-        user = create_user_in_db(db_session, "user", "user@test.com", "pass", role="user")
+        admin = create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
+        user = create_user_in_db(
+            db_session, "user", "user@test.com", "pass", role="user"
+        )
 
         service = UserService(
             user_repo=UserRepository(db_session),
@@ -61,8 +65,12 @@ class TestUserService:
         assert updated.role == "admin"
 
     def test_change_role_invalid_role_raises_400(self, db_session):
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
-        user = create_user_in_db(db_session, "user", "user@test.com", "pass", role="user")
+        admin = create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
+        user = create_user_in_db(
+            db_session, "user", "user@test.com", "pass", role="user"
+        )
 
         service = UserService(
             user_repo=UserRepository(db_session),
@@ -76,7 +84,9 @@ class TestUserService:
 
     @pytest.mark.security
     def test_admin_cannot_demote_self(self, db_session):
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
+        admin = create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
 
         service = UserService(
             user_repo=UserRepository(db_session),
@@ -90,7 +100,9 @@ class TestUserService:
         assert "cannot remove admin role from yourself" in exc.value.detail.lower()
 
     def test_delete_user_removes_user(self, db_session):
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
+        admin = create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
         victim = create_user_in_db(db_session, "victim", "victim@test.com", "pass")
 
         service = UserService(
@@ -104,7 +116,9 @@ class TestUserService:
 
     @pytest.mark.security
     def test_delete_self_raises_400(self, db_session):
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
+        admin = create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
 
         service = UserService(
             user_repo=UserRepository(db_session),

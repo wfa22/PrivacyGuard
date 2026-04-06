@@ -81,8 +81,10 @@ class PaginatedMediaResponse(BaseModel):
 # 5.5. Нормализованный ответ для фронтенда о статусе Remove.bg
 # ══════════════════════════════════════════════════════════════════
 
+
 class RemoveBgStatusResponse(BaseModel):
     """Статус сервиса Remove.bg."""
+
     available: bool
     credits_remaining: Optional[int] = None
     rate_limit_per_minute: int

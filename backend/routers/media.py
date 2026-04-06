@@ -3,8 +3,13 @@ from typing import Optional
 from datetime import datetime
 
 from fastapi import (
-    APIRouter, UploadFile, File, Form,
-    Depends, BackgroundTasks, Query,
+    APIRouter,
+    UploadFile,
+    File,
+    Form,
+    Depends,
+    BackgroundTasks,
+    Query,
 )
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
@@ -13,7 +18,9 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from models.models import User
 from models.schemas import (
-    MediaResponse, MediaUpdate, PaginatedMediaResponse,
+    MediaResponse,
+    MediaUpdate,
+    PaginatedMediaResponse,
     RemoveBgStatusResponse,
 )
 from repositories.media_repository import MediaRepository
@@ -36,6 +43,7 @@ def get_media_service(db: Session = Depends(get_db)) -> MediaService:
 # ══════════════════════════════════════════════════════════════════
 # 5.2. Эндпоинт статуса Remove.bg
 # ══════════════════════════════════════════════════════════════════
+
 
 @router.get("/removebg/status", response_model=RemoveBgStatusResponse)
 def removebg_status(current_user: User = Depends(get_current_user)):
@@ -62,13 +70,13 @@ def removebg_status(current_user: User = Depends(get_current_user)):
 # ── Upload (обновлённый с remove_bg параметром) ─────────────────
 @router.post("/upload", response_model=MediaResponse, status_code=201)
 async def upload_media(
-        background_tasks: BackgroundTasks,
-        file: UploadFile = File(...),
-        description: Optional[str] = Form(None),
-        # 5.2: Новый параметр — нужно ли удалять фон
-        remove_bg: Optional[bool] = Form(False),
-        current_user: User = Depends(get_current_user),
-        service: MediaService = Depends(get_media_service),
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    description: Optional[str] = Form(None),
+    # 5.2: Новый параметр — нужно ли удалять фон
+    remove_bg: Optional[bool] = Form(False),
+    current_user: User = Depends(get_current_user),
+    service: MediaService = Depends(get_media_service),
 ):
     file_content = await file.read()
     file_size = len(file_content)
@@ -89,17 +97,17 @@ async def upload_media(
 # ── List ────────────────────────────────────────────────────────
 @router.get("/", response_model=PaginatedMediaResponse)
 def list_media(
-        search: Optional[str] = Query(None),
-        processed: Optional[bool] = Query(None),
-        file_type: Optional[str] = Query(None),
-        date_from: Optional[datetime] = Query(None),
-        date_to: Optional[datetime] = Query(None),
-        sort_by: str = Query("created_at"),
-        sort_order: str = Query("desc"),
-        page: int = Query(1, ge=1),
-        page_size: int = Query(10, ge=1, le=100),
-        current_user: User = Depends(get_current_user),
-        service: MediaService = Depends(get_media_service),
+    search: Optional[str] = Query(None),
+    processed: Optional[bool] = Query(None),
+    file_type: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    service: MediaService = Depends(get_media_service),
 ):
     return service.list_media_filtered(
         current_user=current_user,
@@ -117,19 +125,19 @@ def list_media(
 
 @router.get("/{media_id}", response_model=MediaResponse)
 def get_media(
-        media_id: int,
-        current_user: User = Depends(get_current_user),
-        service: MediaService = Depends(get_media_service),
+    media_id: int,
+    current_user: User = Depends(get_current_user),
+    service: MediaService = Depends(get_media_service),
 ):
     return service.get_media(media_id, current_user)
 
 
 @router.patch("/{media_id}", response_model=MediaResponse)
 def update_media(
-        media_id: int,
-        payload: MediaUpdate,
-        current_user: User = Depends(get_current_user),
-        service: MediaService = Depends(get_media_service),
+    media_id: int,
+    payload: MediaUpdate,
+    current_user: User = Depends(get_current_user),
+    service: MediaService = Depends(get_media_service),
 ):
     return service.update_media(
         media_id=media_id,
@@ -140,9 +148,9 @@ def update_media(
 
 @router.delete("/{media_id}", status_code=204)
 def delete_media(
-        media_id: int,
-        current_user: User = Depends(get_current_user),
-        service: MediaService = Depends(get_media_service),
+    media_id: int,
+    current_user: User = Depends(get_current_user),
+    service: MediaService = Depends(get_media_service),
 ):
     service.delete_media(media_id, current_user)
     return
@@ -150,9 +158,9 @@ def delete_media(
 
 @router.get("/{media_id}/download")
 def download_media(
-        media_id: int,
-        current_user: User = Depends(get_current_user),
-        service: MediaService = Depends(get_media_service),
+    media_id: int,
+    current_user: User = Depends(get_current_user),
+    service: MediaService = Depends(get_media_service),
 ):
     file_obj, filename = service.get_download_info(media_id, current_user)
     return StreamingResponse(

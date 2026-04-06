@@ -58,6 +58,7 @@ class RemoveBgResult:
 
 class RemoveBgError(Exception):
     """Базовое исключение для ошибок Remove.bg."""
+
     pass
 
 
@@ -71,6 +72,7 @@ class RemoveBgRateLimitError(RemoveBgError):
 
 class RemoveBgQuotaError(RemoveBgError):
     """Лимит бесплатных запросов исчерпан."""
+
     pass
 
 
@@ -131,8 +133,7 @@ class RemoveBgService:
 
         # Удаляем старые timestamps
         self._request_timestamps = [
-            ts for ts in self._request_timestamps
-            if now - ts < window
+            ts for ts in self._request_timestamps if now - ts < window
         ]
 
         if len(self._request_timestamps) >= self.max_requests_per_minute:
@@ -207,7 +208,7 @@ class RemoveBgService:
 
             # Exponential backoff: 1s, 2s, 4s
             if attempt < self.max_retries:
-                backoff = 2 ** attempt
+                backoff = 2**attempt
                 logger.info(f"[RemoveBg] Retrying in {backoff}s...")
                 time.sleep(backoff)
 
@@ -229,10 +230,10 @@ class RemoveBgService:
                 self.API_URL,
                 files={"image_file": ("image.png", image_data, "image/png")},
                 data={
-                    "size": "auto",       # auto-detect best size
-                    "type": "auto",       # auto-detect foreground type
-                    "format": "png",      # PNG для прозрачности
-                    "bg_color": "",       # прозрачный фон
+                    "size": "auto",  # auto-detect best size
+                    "type": "auto",  # auto-detect foreground type
+                    "format": "png",  # PNG для прозрачности
+                    "bg_color": "",  # прозрачный фон
                 },
                 headers={
                     "X-Api-Key": self.api_key,
@@ -247,12 +248,8 @@ class RemoveBgService:
         credits_remaining = self._parse_int_header(
             response.headers, "X-Credits-Remaining"
         )
-        result_width = self._parse_int_header(
-            response.headers, "X-Width"
-        )
-        result_height = self._parse_int_header(
-            response.headers, "X-Height"
-        )
+        result_width = self._parse_int_header(response.headers, "X-Width")
+        result_height = self._parse_int_header(response.headers, "X-Height")
 
         # Логируем оставшиеся кредиты
         if credits_remaining is not None:
@@ -280,9 +277,7 @@ class RemoveBgService:
 
         if response.status_code == 429:
             # Rate limited by API
-            retry_after = self._parse_int_header(
-                response.headers, "Retry-After"
-            ) or 60
+            retry_after = self._parse_int_header(response.headers, "Retry-After") or 60
             raise RemoveBgRateLimitError(retry_after=retry_after)
 
         # Парсим JSON-ошибку от API

@@ -7,10 +7,13 @@ from tests.conftest import create_user_in_db, login_user, auth_header
 @pytest.mark.security
 class TestValidationAndErrors:
     def test_invalid_email_login_returns_400(self, client):
-        resp = client.post("/api/auth/login", json={
-            "email": "not-an-email",
-            "password": "pass",
-        })
+        resp = client.post(
+            "/api/auth/login",
+            json={
+                "email": "not-an-email",
+                "password": "pass",
+            },
+        )
 
         assert resp.status_code == 400
         data = resp.json()
@@ -20,9 +23,7 @@ class TestValidationAndErrors:
         assert "errors" in data
 
     def test_invalid_register_payload_returns_400(self, client):
-        resp = client.post("/api/auth/register", json={
-            "username": "abc"
-        })
+        resp = client.post("/api/auth/register", json={"username": "abc"})
 
         assert resp.status_code == 400
         data = resp.json()
@@ -89,7 +90,9 @@ class TestValidationAndErrors:
         assert resp.status_code in (401, 403)
 
     def test_invalid_token_returns_401(self, client):
-        resp = client.get("/api/users/me", headers={"Authorization": "Bearer bad.token"})
+        resp = client.get(
+            "/api/users/me", headers={"Authorization": "Bearer bad.token"}
+        )
         assert resp.status_code == 401
 
     def test_nonexistent_media_returns_404(self, client, db_session):

@@ -38,13 +38,13 @@ app.include_router(
     users.router,
     prefix="/api",
     tags=["Users"],
-    dependencies=[Depends(auth.get_current_user)]
+    dependencies=[Depends(auth.get_current_user)],
 )
 app.include_router(
     media.router,
     prefix="/api",
     tags=["Media"],
-    dependencies=[Depends(auth.get_current_user)]
+    dependencies=[Depends(auth.get_current_user)],
 )
 
 
@@ -257,7 +257,11 @@ def get_structured_data():
     }
 
 
-@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+@app.api_route(
+    "/api/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    include_in_schema=False,
+)
 async def api_catch_all(path: str):
     return JSONResponse(
         status_code=404,
@@ -290,7 +294,7 @@ def custom_openapi():
     openapi_schema["components"]["securitySchemes"]["BearerAuth"] = {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT"
+        "bearerFormat": "JWT",
     }
 
     openapi_schema["security"] = [{"BearerAuth": []}]

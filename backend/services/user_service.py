@@ -4,7 +4,6 @@ from models.models import User
 from repositories.user_repository import UserRepository
 from repositories.token_repository import TokenRepository
 
-
 VALID_ROLES = {"user", "admin"}
 
 

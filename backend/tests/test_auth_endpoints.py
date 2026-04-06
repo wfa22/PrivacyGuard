@@ -6,11 +6,14 @@ from tests.conftest import create_user_in_db, login_full, login_user, auth_heade
 @pytest.mark.integration
 class TestAuthEndpoints:
     def test_register_returns_201_and_user_structure(self, client):
-        resp = client.post("/api/auth/register", json={
-            "username": "newuser",
-            "email": "new@test.com",
-            "password": "mypass123",
-        })
+        resp = client.post(
+            "/api/auth/register",
+            json={
+                "username": "newuser",
+                "email": "new@test.com",
+                "password": "mypass123",
+            },
+        )
 
         assert resp.status_code == 201
         data = resp.json()
@@ -21,10 +24,13 @@ class TestAuthEndpoints:
     def test_login_returns_token_structure(self, client, db_session):
         create_user_in_db(db_session, "user1", "user1@test.com", "password123")
 
-        resp = client.post("/api/auth/login", json={
-            "email": "user1@test.com",
-            "password": "password123",
-        })
+        resp = client.post(
+            "/api/auth/login",
+            json={
+                "email": "user1@test.com",
+                "password": "password123",
+            },
+        )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -34,10 +40,13 @@ class TestAuthEndpoints:
     def test_login_wrong_password_returns_401(self, client, db_session):
         create_user_in_db(db_session, "user2", "user2@test.com", "correct")
 
-        resp = client.post("/api/auth/login", json={
-            "email": "user2@test.com",
-            "password": "wrong",
-        })
+        resp = client.post(
+            "/api/auth/login",
+            json={
+                "email": "user2@test.com",
+                "password": "wrong",
+            },
+        )
 
         assert resp.status_code == 401
         assert resp.json()["detail"] == "Invalid credentials"

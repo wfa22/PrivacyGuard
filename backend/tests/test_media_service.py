@@ -157,7 +157,9 @@ class TestMediaService:
     @pytest.mark.security
     def test_admin_can_get_any_media(self, db_session):
         owner = create_user_in_db(db_session, "owner", "owner@test.com", "pass")
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
+        admin = create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
         item = create_media_in_db(db_session, owner.id, original_filename="a.jpg")
 
         service = MediaService(

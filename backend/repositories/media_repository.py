@@ -6,7 +6,6 @@ from sqlalchemy import or_, asc, desc
 
 from models.models import MediaItem
 
-
 # Допустимые поля для сортировки → маппинг на столбцы модели
 ALLOWED_SORT_FIELDS = {
     "created_at": MediaItem.created_at,
@@ -29,11 +28,7 @@ class MediaRepository:
         return self.db.query(MediaItem).all()
 
     def get_by_user(self, user_id: int) -> List[MediaItem]:
-        return (
-            self.db.query(MediaItem)
-            .filter(MediaItem.user_id == user_id)
-            .all()
-        )
+        return self.db.query(MediaItem).filter(MediaItem.user_id == user_id).all()
 
     def get_filtered(
         self,

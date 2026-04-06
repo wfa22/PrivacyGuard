@@ -8,8 +8,11 @@ from core.config import settings
 from core.database import get_db
 from models.models import User
 from models.schemas import (
-    UserCreate, UserResponse, LoginRequest,
-    TokenResponse, RefreshRequest,
+    UserCreate,
+    UserResponse,
+    LoginRequest,
+    TokenResponse,
+    RefreshRequest,
 )
 from repositories.user_repository import UserRepository
 from repositories.token_repository import TokenRepository
@@ -24,6 +27,7 @@ VALID_ROLES = {"user", "admin"}
 
 # ── DI: создание сервиса ──
 
+
 def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
     return AuthService(
         user_repo=UserRepository(db),
@@ -33,6 +37,7 @@ def get_auth_service(db: Session = Depends(get_db)) -> AuthService:
 
 # ── Dependency: текущий пользователь ──
 
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
@@ -40,7 +45,9 @@ def get_current_user(
     token = credentials.credentials
     try:
         payload = jwt.decode(
-            token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM],
+            token,
+            settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM],
         )
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
@@ -66,10 +73,12 @@ def require_role(*allowed_roles: str):
                 detail=f"Access denied. Required role: {', '.join(allowed_roles)}",
             )
         return current_user
+
     return _check
 
 
 # ── Endpoints ──
+
 
 @router.post("/register", response_model=UserResponse, status_code=201)
 def register(

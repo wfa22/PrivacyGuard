@@ -52,7 +52,9 @@ class TestUsersEndpoints:
         assert resp.json()["role"] == "admin"
 
     def test_admin_cannot_demote_self(self, client, db_session):
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
+        admin = create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
         token = login_user(client, "admin@test.com", "pass")
 
         resp = client.patch(
@@ -76,7 +78,9 @@ class TestUsersEndpoints:
         assert resp.status_code == 204
 
     def test_admin_cannot_delete_self(self, client, db_session):
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
+        admin = create_user_in_db(
+            db_session, "admin", "admin@test.com", "pass", role="admin"
+        )
         token = login_user(client, "admin@test.com", "pass")
 
         resp = client.delete(

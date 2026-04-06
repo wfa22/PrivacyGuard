@@ -8,10 +8,10 @@ import sys
 import json
 import fnmatch
 from pathlib import Path
-from datetime import datetime, timezone
 
 ROOT_ARG = sys.argv[1] if len(sys.argv) > 1 else "."
 ROOT = Path(ROOT_ARG).resolve()
+
 
 # Загружаем .gitignore и добавляем node_modules и .git в исключения
 def load_gitignore(root: Path):
@@ -31,6 +31,7 @@ def load_gitignore(root: Path):
     patterns.append(("backend/.pytest_cache/", False))
     patterns.append(("src/components/ui/", False))
     return patterns
+
 
 def matches_pattern(rel: str, pattern: str):
     rel = rel.replace(os.sep, "/")
@@ -57,6 +58,7 @@ def matches_pattern(rel: str, pattern: str):
             return True
     return False
 
+
 def is_ignored(rel: str, is_dir: bool, patterns):
     ignored = False
     for pat, neg in patterns:
@@ -68,8 +70,10 @@ def is_ignored(rel: str, is_dir: bool, patterns):
                 continue
     return ignored
 
+
 def walk(root: Path, patterns):
     out = []
+
     def rec(cur: Path):
         try:
             entries = sorted(list(cur.iterdir()), key=lambda p: p.name)
@@ -83,18 +87,18 @@ def walk(root: Path, patterns):
                 continue
             if is_ignored(rel, is_dir, patterns):
                 continue
-            try:
-                st = e.stat()
-            except Exception:
-                continue
-            out.append({
-                "path": rel,
-                "type": "dir" if is_dir else "file",
-            })
+            out.append(
+                {
+                    "path": rel,
+                    "type": "dir" if is_dir else "file",
+                }
+            )
             if is_dir:
                 rec(e)
+
     rec(root)
     return out
+
 
 def main():
     patterns = load_gitignore(ROOT)
@@ -102,6 +106,7 @@ def main():
     items.sort(key=lambda x: x["path"])
     json.dump(items, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
+
 
 if __name__ == "__main__":
     main()

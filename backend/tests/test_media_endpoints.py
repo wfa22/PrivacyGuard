@@ -22,7 +22,9 @@ class TestMediaEndpoints:
         assert {"items", "total", "page", "page_size", "pages"} <= set(data.keys())
         assert isinstance(data["items"], list)
 
-    def test_upload_image_returns_201_and_structure(self, client, db_session, monkeypatch):
+    def test_upload_image_returns_201_and_structure(
+        self, client, db_session, monkeypatch
+    ):
         create_user_in_db(db_session, "u1", "u1@test.com", "pass")
         token = login_user(client, "u1@test.com", "pass")
 
@@ -34,7 +36,9 @@ class TestMediaEndpoints:
                 return f"http://test.local/{object_name}"
 
         monkeypatch.setattr("routers.media.StorageService", lambda: FakeStorage())
-        monkeypatch.setattr("services.media_service.StorageService", lambda: FakeStorage())
+        monkeypatch.setattr(
+            "services.media_service.StorageService", lambda: FakeStorage()
+        )
 
         resp = client.post(
             "/api/media/upload",
@@ -74,7 +78,9 @@ class TestMediaEndpoints:
                 return f"http://test.local/{object_name}"
 
         monkeypatch.setattr("routers.media.StorageService", lambda: FakeStorage())
-        monkeypatch.setattr("services.media_service.StorageService", lambda: FakeStorage())
+        monkeypatch.setattr(
+            "services.media_service.StorageService", lambda: FakeStorage()
+        )
 
         resp = client.get(f"/api/media/{item.id}", headers=auth_header(token))
 
@@ -84,7 +90,6 @@ class TestMediaEndpoints:
     @pytest.mark.security
     def test_user_cannot_access_other_media(self, client, db_session, monkeypatch):
         owner = create_user_in_db(db_session, "owner", "owner@test.com", "pass")
-        other = create_user_in_db(db_session, "other", "other@test.com", "pass")
         item = create_media_in_db(db_session, owner.id, original_filename="img.jpg")
         token = login_user(client, "other@test.com", "pass")
 
@@ -93,7 +98,9 @@ class TestMediaEndpoints:
                 return f"http://test.local/{object_name}"
 
         monkeypatch.setattr("routers.media.StorageService", lambda: FakeStorage())
-        monkeypatch.setattr("services.media_service.StorageService", lambda: FakeStorage())
+        monkeypatch.setattr(
+            "services.media_service.StorageService", lambda: FakeStorage()
+        )
 
         resp = client.get(f"/api/media/{item.id}", headers=auth_header(token))
 
@@ -102,7 +109,6 @@ class TestMediaEndpoints:
     @pytest.mark.security
     def test_admin_can_access_any_media(self, client, db_session, monkeypatch):
         owner = create_user_in_db(db_session, "owner", "owner@test.com", "pass")
-        admin = create_user_in_db(db_session, "admin", "admin@test.com", "pass", role="admin")
         item = create_media_in_db(db_session, owner.id, original_filename="img.jpg")
         token = login_user(client, "admin@test.com", "pass")
 
@@ -111,7 +117,9 @@ class TestMediaEndpoints:
                 return f"http://test.local/{object_name}"
 
         monkeypatch.setattr("routers.media.StorageService", lambda: FakeStorage())
-        monkeypatch.setattr("services.media_service.StorageService", lambda: FakeStorage())
+        monkeypatch.setattr(
+            "services.media_service.StorageService", lambda: FakeStorage()
+        )
 
         resp = client.get(f"/api/media/{item.id}", headers=auth_header(token))
 
@@ -119,7 +127,9 @@ class TestMediaEndpoints:
 
     def test_patch_media_updates_description(self, client, db_session, monkeypatch):
         user = create_user_in_db(db_session, "u1", "u1@test.com", "pass")
-        item = create_media_in_db(db_session, user.id, original_filename="img.jpg", description="old")
+        item = create_media_in_db(
+            db_session, user.id, original_filename="img.jpg", description="old"
+        )
         token = login_user(client, "u1@test.com", "pass")
 
         class FakeStorage:
@@ -127,7 +137,9 @@ class TestMediaEndpoints:
                 return f"http://test.local/{object_name}"
 
         monkeypatch.setattr("routers.media.StorageService", lambda: FakeStorage())
-        monkeypatch.setattr("services.media_service.StorageService", lambda: FakeStorage())
+        monkeypatch.setattr(
+            "services.media_service.StorageService", lambda: FakeStorage()
+        )
 
         resp = client.patch(
             f"/api/media/{item.id}",
@@ -140,7 +152,9 @@ class TestMediaEndpoints:
 
     def test_delete_media_returns_204(self, client, db_session, monkeypatch):
         user = create_user_in_db(db_session, "u1", "u1@test.com", "pass")
-        item = create_media_in_db(db_session, user.id, original_filename="img.jpg", processed=True)
+        item = create_media_in_db(
+            db_session, user.id, original_filename="img.jpg", processed=True
+        )
         token = login_user(client, "u1@test.com", "pass")
 
         class FakeStorage:
@@ -151,15 +165,21 @@ class TestMediaEndpoints:
                 return f"http://test.local/{object_name}"
 
         monkeypatch.setattr("routers.media.StorageService", lambda: FakeStorage())
-        monkeypatch.setattr("services.media_service.StorageService", lambda: FakeStorage())
+        monkeypatch.setattr(
+            "services.media_service.StorageService", lambda: FakeStorage()
+        )
 
         resp = client.delete(f"/api/media/{item.id}", headers=auth_header(token))
 
         assert resp.status_code == 204
 
-    def test_download_media_returns_file_response(self, client, db_session, monkeypatch):
+    def test_download_media_returns_file_response(
+        self, client, db_session, monkeypatch
+    ):
         user = create_user_in_db(db_session, "u1", "u1@test.com", "pass")
-        item = create_media_in_db(db_session, user.id, original_filename="img.jpg", processed=True)
+        item = create_media_in_db(
+            db_session, user.id, original_filename="img.jpg", processed=True
+        )
         token = login_user(client, "u1@test.com", "pass")
 
         class FakeStream(io.BytesIO):
@@ -174,7 +194,9 @@ class TestMediaEndpoints:
                 return f"http://test.local/{object_name}"
 
         monkeypatch.setattr("routers.media.StorageService", lambda: FakeStorage())
-        monkeypatch.setattr("services.media_service.StorageService", lambda: FakeStorage())
+        monkeypatch.setattr(
+            "services.media_service.StorageService", lambda: FakeStorage()
+        )
 
         resp = client.get(f"/api/media/{item.id}/download", headers=auth_header(token))
 

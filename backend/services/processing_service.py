@@ -15,6 +15,7 @@ from services.removebg_service import RemoveBgService, RemoveBgResult, RemoveBgE
 
 try:
     from ultralytics import YOLO
+
     YOLO_AVAILABLE = True
 except ImportError:
     YOLO_AVAILABLE = False
@@ -94,14 +95,17 @@ def _detect_boxes(image: np.ndarray) -> List[Tuple[int, int, int, int]]:
 
 try:
     import cv2
+
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
 
 
-def _blur_boxes(image: np.ndarray, boxes: List[Tuple[int, int, int, int]]) -> np.ndarray:
+def _blur_boxes(
+    image: np.ndarray, boxes: List[Tuple[int, int, int, int]]
+) -> np.ndarray:
     out = image.copy()
-    for (x1, y1, x2, y2) in boxes:
+    for x1, y1, x2, y2 in boxes:
         roi = out[y1:y2, x1:x2]
         if roi.size == 0:
             continue
@@ -206,9 +210,7 @@ def process_media_item(media_id: int, remove_bg: bool = False):
     db = SessionLocal()
     try:
         item: mdl.MediaItem | None = (
-            db.query(mdl.MediaItem)
-            .filter(mdl.MediaItem.id == media_id)
-            .first()
+            db.query(mdl.MediaItem).filter(mdl.MediaItem.id == media_id).first()
         )
         if not item or not item.original_filename:
             return

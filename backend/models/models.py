@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
-from datetime import datetime, timezone
+from datetime import datetime
 
 from core.database import Base
 
@@ -50,9 +50,9 @@ class MediaItem(Base):
     description = Column(String, nullable=True)
     processed_object_name = Column(String, nullable=True)
 
-    file_type = Column(String, nullable=True)       # "image" | "video"
-    file_size = Column(Integer, nullable=True)       # размер в байтах
-    content_type = Column(String, nullable=True)     # MIME-тип
+    file_type = Column(String, nullable=True)  # "image" | "video"
+    file_size = Column(Integer, nullable=True)  # размер в байтах
+    content_type = Column(String, nullable=True)  # MIME-тип
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

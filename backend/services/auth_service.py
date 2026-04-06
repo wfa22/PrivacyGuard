@@ -9,8 +9,8 @@ from repositories.user_repository import UserRepository
 from repositories.token_repository import TokenRepository
 from services.jwt_service import create_access_token, create_refresh_token
 
-
 # ── Хеширование паролей ──
+
 
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
@@ -36,6 +36,7 @@ def hash_token(token: str) -> str:
 
 
 # ── Бизнес-логика аутентификации ──
+
 
 class AuthService:
     """Service-слой: регистрация, логин, refresh, logout."""
