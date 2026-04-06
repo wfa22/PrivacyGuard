@@ -54,33 +54,12 @@ export default defineConfig({
   build: {
     target: 'esnext',
     outDir: 'build',
-
-    // ══════════════════════════════════════════════════════════════
-    // 4.3. ОПТИМИЗАЦИЯ РАЗМЕРА БАНДЛА
-    // ══════════════════════════════════════════════════════════════
-    // WHY: Один большой JS-файл = долгая загрузка + блокировка рендера.
-    // Code splitting по маршрутам (React.lazy) создаёт отдельные чанки.
-    // rollupOptions дополнительно разделяет vendor-библиотеки.
-    //
-    // Результат:
-    // - index.js: ~50KB (React + router + app shell)
-    // - vendor-radix.js: ~80KB (UI компоненты, загружается параллельно)
-    // - vendor-motion.js: ~40KB (анимации, только для CensoringPage)
-    // - AuthPage.js, DashboardPage.js, etc.: ~10-30KB каждый (lazy)
-    //
-    // cssCodeSplit: true → CSS каждого чанка загружается отдельно
-    // ══════════════════════════════════════════════════════════════
     cssCodeSplit: true,
     rollupOptions: {
       output: {
         manualChunks: {
-          // React core — кэшируется надолго, меняется редко
           'vendor-react': ['react', 'react-dom'],
-
-          // Router — отдельный чанк
           'vendor-router': ['react-router-dom'],
-
-          // UI библиотеки (Radix) — большой блок, но меняется редко
           'vendor-radix': [
             '@radix-ui/react-dialog',
             '@radix-ui/react-select',
@@ -90,17 +69,11 @@ export default defineConfig({
             '@radix-ui/react-label',
             '@radix-ui/react-alert-dialog',
           ],
-
-          // Анимации — только CensoringPage их использует
           'vendor-motion': ['motion'],
-
-          // Иконки — tree-shaking работает, но чанк помогает кэшированию
           'vendor-icons': ['lucide-react'],
         },
       },
     },
-
-    // Предупреждение если чанк > 500KB (дефолт 500KB)
     chunkSizeWarningLimit: 500,
   },
   server: {
@@ -122,5 +95,13 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/test/setup.ts',
+    css: true,
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    exclude: ['e2e/**', 'node_modules/**', 'backend/**'],
   },
 });
